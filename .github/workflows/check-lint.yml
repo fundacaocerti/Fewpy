@@ -1,0 +1,37 @@
+name: Check Lint
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  lint:
+    name: Check Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Poetry Setup
+        uses: snok/install-poetry@v1
+
+      - name: Install uv based on the version defined in pyproject.toml
+        uses: astral-sh/setup-uv@v6
+        with:
+          version-file: "pyproject.toml"
+
+      - name: Run Lint Check
+        id: lint
+        run: |
+          set -o pipefail
+          uv run ruff format --check .
+          uv run ruff check .
+        continue-on-error: true
+
+      - name: Lint Failed
+        if: steps.lint.outcome != 'success'
+        run: |
+          echo -e "\033[0;31m Linting failed. See the errors below:\n"
+          cat lint_output.log
+          exit 1
