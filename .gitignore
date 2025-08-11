@@ -169,3 +169,10 @@ poetry.toml
 
 # LSP config files
 pyrightconfig.json
+
+.bmp
+dataset/
+.pht
+.png
+assets/
+checkpoints/
