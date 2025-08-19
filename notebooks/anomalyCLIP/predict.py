@@ -6,7 +6,7 @@ from common.dataset import Dataset, FewShotDataset
 from scipy.ndimage import gaussian_filter
 import cv2
 import random
-import clip
+import open_clip as clip
 import numpy as np
 from model.utils import normalize
 from model.prompt_ensemble import AnomalyCLIP_PromptLearner
@@ -28,7 +28,7 @@ class AnomalyCLIPConfig(BaseModel):
     )
     features_list: list[int] = Field(
         default_factory=lambda: [6, 12, 18, 24],
-        description="List of feature indices"
+        description="List of feature (scales) indices"
     )
     image_size: int = 700
     depth: int = 9
@@ -42,12 +42,23 @@ class AnomalyCLIPConfig(BaseModel):
         default_factory=lambda: [0.5, 1.0, 2.0, 3.0],
         description="Weights for the scales"
     )
+    obj_threshold: float = Field(0.1, description="Pixel intensity threshold for object detection")
+    gamma: float = Field(2.0, description="Anomaly map intesity")
+    contrast: float = Field(
+        0.07, 
+        description="Take control of sharpness between anomaly patches."
+        "Larger values tend to give less contrast between anomalies"
+    )
 
     user_prompts: list[str] | None = Field(
         None,
         description="List of prompts to guide detection"
     )
-    softmax_temp: float = Field(0.07, description="Softmax temperature for attention")
+    softmax_temp: float = Field(
+        0.07, 
+        description="Softmax temperature for user text prompt attention. " \
+        "Lower values pay more attention to visual anomalies described by the user prompt."
+    )
     seed: int = 111
     sigma: int = 4
     output_dir: str = './results'
@@ -218,7 +229,7 @@ def predict_anomalyclip(config: AnomalyCLIPConfig):
             prototypes_for_this_layer = final_prototypes_per_layer[i]                                      # -> [K, D]
             
             similarity, _ = AnomalyCLIP_lib.compute_similarity(patch_feature_normalized, prototypes_for_this_layer) # -> [B, N, K]
-            similarity = similarity // 0.07                                                                         # -> [B, N, K]
+            similarity = similarity / config.contrast                                                                        # -> [B, N, K]
             
             similarity_map = AnomalyCLIP_lib.get_similarity_map(similarity[:, 1:, :], config.image_size)   # -> [B, H, W, K]
             anomaly_map = (similarity_map[..., 1] + 1 - similarity_map[..., 0]) / 2.0                      # -> [B, H, W]
@@ -234,9 +245,7 @@ def predict_anomalyclip(config: AnomalyCLIPConfig):
         
         logger.debug("Starting advanced post-processing of anomaly map")
         anomaly_map_cpu = anomaly_map.detach().cpu()                                                       # -> [B, H, W]
-        threshold = 0.1
-        gamma = 1.5
-        object_mask = anomaly_map_cpu > threshold                                                          # -> [B, H, W] (bool)
+        object_mask = anomaly_map_cpu > config.obj_threshold                                                          # -> [B, H, W] (bool)
         object_pixels = anomaly_map_cpu[object_mask]                                                       # -> [NumObjPixels]
         
         if object_pixels.numel() > 0:
@@ -248,7 +257,7 @@ def predict_anomalyclip(config: AnomalyCLIPConfig):
             if max_val > 1e-6:
                 map_processed = map_processed / max_val                                                    # -> [B, H, W]
                 
-            map_processed = map_processed ** gamma                                                         # -> [B, H, W]
+            map_processed = map_processed ** config.gamma                                                         # -> [B, H, W]
             final_map = map_processed * object_mask.float()                                                # -> [B, H, W]
         else:
             logger.warning("No objects detected with the current threshold.")
