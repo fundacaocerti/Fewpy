@@ -20,6 +20,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           version-file: "pyproject.toml"
+          working-directory: "./Fewpy"
 
       - name: Run Lint Check
         id: lint
