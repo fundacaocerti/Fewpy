@@ -21,12 +21,8 @@ jobs:
           echo "Current working directory: $(pwd)"
           echo "Contents of repository root:"
           ls -F
-          echo "Contents of Fewpy subdirectory:"
-          ls -F Fewpy/
           if [ -f "pyproject.toml" ]; then
             echo "pyproject.toml found in repo root."
-          elif [ -f "Fewpy/pyproject.toml" ]; then
-            echo "pyproject.toml found in Fewpy/ subdirectory."
           else
             echo "pyproject.toml NOT found in common locations."
           fi
@@ -35,12 +31,6 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           version-file: "pyproject.toml"
-
-      - name: Install uv based on the version defined in pyproject.toml
-        uses: astral-sh/setup-uv@v6
-        with:
-          version-file: "pyproject.toml"
-          working-directory: "../"
 
       - name: Run Lint Check
         id: lint
