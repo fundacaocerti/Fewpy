@@ -16,19 +16,8 @@ jobs:
       - name: Poetry Setup
         uses: snok/install-poetry@v1
 
-      - name: Debug
-        run: |
-          echo "Current working directory: $(pwd)"
-          echo "Contents of repository root:"
-          ls -F
-          if [ -f "pyproject.toml" ]; then
-            echo "pyproject.toml found in repo root."
-          else
-            echo "pyproject.toml NOT found in common locations."
-          fi
-
       - name: Install uv based on the version defined in pyproject.toml
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v1
         with:
           version-file: "pyproject.toml"
 
