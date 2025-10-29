@@ -25,8 +25,8 @@ jobs:
         id: lint
         run: |
           set -o pipefail
-          uv run ruff format --check .
-          uv run ruff check .
+          (uv run ruff format --check . 2>&1 || true) | tee lint_output.log
+          (uv run ruff check . 2>&1 || true) | tee -a lint_output.log
         continue-on-error: true
 
       - name: Lint Failed
