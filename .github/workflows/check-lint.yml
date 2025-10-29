@@ -16,6 +16,30 @@ jobs:
       - name: Poetry Setup
         uses: snok/install-poetry@v1
 
+      - name: Debug
+        run: |
+          echo "Current working directory: $(pwd)"
+          echo "Contents of repository root:"
+          ls -F
+          echo "Contents of Fewpy subdirectory:"
+          ls -F Fewpy/
+          if [ -f "pyproject.toml" ]; then
+            echo "pyproject.toml found in repo root."
+          elif [ -f "Fewpy/pyproject.toml" ]; then
+            echo "pyproject.toml found in Fewpy/ subdirectory."
+          else
+            echo "pyproject.toml NOT found in common locations."
+          fi
+
+      - name: Install uv based on the version defined in pyproject.toml
+        uses: astral-sh/setup-uv@v6
+        with:
+          version-file: "pyproject.toml"
+          # If the file is in 'Fewpy/pyproject.toml', use:
+          # working-directory: "Fewpy"
+          # If the file is in 'pyproject.toml', remove the working-directory line:
+          # (No working-directory needed here)
+
       - name: Install uv based on the version defined in pyproject.toml
         uses: astral-sh/setup-uv@v6
         with:
