@@ -17,10 +17,9 @@ jobs:
         uses: snok/install-poetry@v1
 
       - name: Install uv based on the version defined in pyproject.toml
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v1
         with:
           version-file: "pyproject.toml"
-          working-directory: "../"
 
       - name: Run Lint Check
         id: lint
