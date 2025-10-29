@@ -3,25 +3,25 @@ import numpy as np
 from PIL.Image import Image
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
-# from ..models.fsl_model import FSLModel
 
 
 class FSLDataset(Dataset):
 
     def __init__(self,
                  data: list[list[Image]],
-                 model) -> None:
+                 img_size: tuple,
+                 pixel_norm: tuple) -> None:
         super().__init__()
 
         # set transform composition that turns pillow image objects into datapoints compatible with the library
         transfs = []
-        if model.img_size:
-            transfs.append(transforms.Resize(model.img_size))
+        if img_size:
+            transfs.append(transforms.Resize(img_size))
 
         transfs.append(transforms.ToTensor())
 
-        if model.pixel_norm:
-            mean, std = model.pixel_norm
+        if pixel_norm:
+            mean, std = pixel_norm
             transfs.append(transforms.Normalize(mean, std))
 
         self.data = data
