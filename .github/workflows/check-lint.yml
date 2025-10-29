@@ -21,6 +21,9 @@ jobs:
         with:
           version-file: "pyproject.toml"
 
+      - name: Sync Dependencies
+        run: uv sync --dev
+
       - name: Run Lint Check
         id: lint
         run: |
