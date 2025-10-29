@@ -35,10 +35,6 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           version-file: "pyproject.toml"
-          # If the file is in 'Fewpy/pyproject.toml', use:
-          # working-directory: "Fewpy"
-          # If the file is in 'pyproject.toml', remove the working-directory line:
-          # (No working-directory needed here)
 
       - name: Install uv based on the version defined in pyproject.toml
         uses: astral-sh/setup-uv@v6
