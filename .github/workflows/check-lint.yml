@@ -20,7 +20,7 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           version-file: "pyproject.toml"
-
+          
       - name: Sync Dependencies
         run: uv sync --dev
 
