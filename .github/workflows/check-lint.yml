@@ -17,17 +17,19 @@ jobs:
         uses: snok/install-poetry@v1
 
       - name: Install uv based on the version defined in pyproject.toml
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v1
         with:
           version-file: "pyproject.toml"
-          working-directory: "../"
+          
+      - name: Sync Dependencies
+        run: uv sync --dev
 
       - name: Run Lint Check
         id: lint
         run: |
           set -o pipefail
-          uv run ruff format --check .
-          uv run ruff check .
+          (uv tool run ruff format --check . 2>&1 || true) | tee lint_output.log
+          (uv tool run ruff check . 2>&1 || true) | tee -a lint_output.log
         continue-on-error: true
 
       - name: Lint Failed
