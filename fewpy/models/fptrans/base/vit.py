@@ -179,9 +179,7 @@ class VisionTransformer(nn.Module):
         elif pretrained.endswith('.npz'):
             _load_weights_npz(self, pretrained)
         else:
-            # TODO - uncomment
-            # raise ValueError(f'Not recognized file {pretrained}. [.pth|.npz]')
-            pass
+            raise ValueError(f'Not recognized file {pretrained}. [.pth|.npz]')
 
     def forward_original(self, x):
         # x: [B, C, H, W]
