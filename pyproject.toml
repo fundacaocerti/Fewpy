@@ -33,7 +33,15 @@ classifiers = [
   "Topic :: Scientific/Engineering",
   "Topic :: Scientific/Engineering :: Artificial Intelligence"
 ]
-dependencies = []
+dependencies = [
+    "ftfy>=6.3.1",
+    "open-clip-torch>=3.2.0",
+    "packaging>=25.0",
+    "pydantic>=2.12.3",
+    "regex>=2025.11.3",
+    "scipy>=1.13.1",
+    "tdqm>=0.0.1",
+]
 
 [dependency-groups]
 dev = [
