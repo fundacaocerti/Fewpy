@@ -3,17 +3,27 @@ import importlib
 import os
 import sys
 
+invalid_dir = ["__pycache__", "weights"]
 
-__path__ = [os.path.abspath(os.path.dirname(__file__))]
-# TODO - solve imports
-# __path__[0] = os.path.join(__path__[0], "anomalyCLIP" )
-# print(__path__)
-# print(list(pkgutil.walk_packages(__path__)))
+def check_for_dep(path):
 
-for loader, module_name, is_pkg in pkgutil.walk_packages(__path__):
-    if not is_pkg and module_name.count(".") == 2:
+    for root, dirnames, _ in os.walk(str(path)):
+        for dir in dirnames:
+            if dir not in invalid_dir: check_inside(os.path.join(root, dir))
+
+def check_inside(path):
+
+    pkg_name = __name__
+
+    for _, name, ispkg in pkgutil.iter_modules([path]):
         try:
-            importlib.import_module(module_name)
-            print(f"imported: {module_name}")
+            if not ispkg:
+                parent_module = ""
+                split_path = path.split(os.sep)
+                for p in split_path[split_path.index('models')+1:]:
+                    parent_module += p + "."
+                importlib.import_module(f"{pkg_name}.{parent_module}{name}")
         except Exception as e:
-            print(f"Error loading model module {module_name}: {e}", file=sys.stderr)
+            print(f"Failed to import module {name}.", e)
+
+check_for_dep(os.path.dirname(__file__))
