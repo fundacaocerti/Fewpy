@@ -1,17 +1,22 @@
-from typing import Dict, Any, Callable
+from typing import Dict, Any, Callable, Tuple
 
 
-CONSTRUCTOR_REGISTRY: Dict[str, Any] = {}
+REGISTRY: Dict[str, Tuple[Any]] = {}
+CONFIG = "config"
+CONSTRUCTOR = "constructor"
 
-def register_constructor(name: str):
+def register_constructor(name: str, config_cls):
 
     def wrapper(constructor_cls) -> Callable:
         # Check for duplicate registrations
-        if name in CONSTRUCTOR_REGISTRY:
+        if name in REGISTRY:
             raise ValueError(f"Model with name '{name}' is already registered.")
         
         # Add the model and config to the registry
-        CONSTRUCTOR_REGISTRY[name] = constructor_cls
+        REGISTRY[name] = {
+            "constructor": constructor_cls,
+            "config": config_cls
+        }
 
         return constructor_cls
     return wrapper

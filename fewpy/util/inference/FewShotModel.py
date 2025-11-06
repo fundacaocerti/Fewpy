@@ -3,12 +3,12 @@ from inspect import signature, Parameter
 from pydantic import BaseModel
 
 from .preprocessor import Preprocessor
-from .register import CONSTRUCTOR_REGISTRY
+from .register import REGISTRY, CONFIG, CONSTRUCTOR
 
 
 class FewShotModel:
 
-    def __init__(self, model: str, config: BaseModel=None, preprocessors: list[Preprocessor]=[]) -> None:
+    def __init__(self, model: str, config: dict=None, preprocessors: list[Preprocessor]=[]) -> None:
         
         self.model, self.device = self.__load_model(model, config)
         params = signature(self.model.predict).parameters
@@ -26,7 +26,7 @@ class FewShotModel:
     @staticmethod
     def __load_model(model: str, config: dict):
         
-        return CONSTRUCTOR_REGISTRY[model](config).instantiate_model()
+        return REGISTRY[model][CONSTRUCTOR](REGISTRY[model][CONFIG](**config)).instantiate_model()
 
     def get_model_in_features(self):
 
