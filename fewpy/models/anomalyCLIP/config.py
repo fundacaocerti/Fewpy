@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from typing import Dict
 
 
 class AnomalyCLIPConfig(BaseModel):
@@ -27,10 +28,10 @@ class AnomalyCLIPConfig(BaseModel):
         "Larger values tend to give less self.config.contrast between anomalies"
     )
 
-    user_prompts: list[str] | None = Field(
-        None,
-        description="List of prompts to guide detection"
-    )
+    # user_prompts: list[str] | None = Field(
+    #     None,
+    #     description="List of prompts to guide detection"
+    # )
     softmax_temp: float = Field(
         0.07, 
         description="Softmax temperature for user text prompt attention. " \
@@ -39,3 +40,5 @@ class AnomalyCLIPConfig(BaseModel):
     seed: int = Field(default=111)
     sigma: int = Field(default=4)
     cls_id: int | None = Field(default=None)
+
+    checkpoint: Dict | None = Field(default=None)

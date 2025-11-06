@@ -334,7 +334,6 @@ class Transformer(nn.Module):
         self.layers = layers
         self.text_layer = text_layer
         self.design_deatails = design_details
-        print("text_layer", self.text_layer)
         if self.text_layer and (design_details is not None):
             self.resblocks = nn.ModuleList(
                 [

@@ -1,8 +1,8 @@
 from .base.vit import VisionTransformer, Transformer, LayerNorm
-from utils.register import register_constructor
+from fewpy.util.inference.register import register_constructor
 
 from typing import Tuple, Union
-from config import AnomalyCLIPConfig
+from .config import AnomalyCLIPConfig
 
 import numpy as np
 import torch
@@ -176,8 +176,8 @@ class AnomalyCLIP(nn.Module):
         self,
         prompts,
         tokenized_prompts,
-        deep_compound_prompts_text=None,
-        normalize: bool = False,
+        deep_compound_prompts_text=None
+        # normalize: bool = False,
     ):
         
         cast_dtype = self.transformer.get_cast_dtype()
@@ -185,10 +185,8 @@ class AnomalyCLIP(nn.Module):
         # x = self.token_embedding(text).to(cast_dtype)  # [batch_size, n_ctx, d_model]
 
         # x = x + self.positional_embedding.to(cast_dtype)
-
         x = prompts + self.positional_embedding.to(cast_dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND
-        # print("test", x.shape, len(deep_compound_prompts_text))
         if deep_compound_prompts_text is None:
             x = self.transformer(x)
         else:
@@ -226,25 +224,26 @@ class AnomalyCLIP(nn.Module):
                 x,
                 s_x,
                 s_y,
-                user_tknized_prompts: list[int]=[],
+                user_tknized_prompts,
                 epsilon: float=1e-8):
-        
+
         with torch.no_grad():
-            prompts, tknized_prompts, compound_prompts_text = self.prompt_learner()
+            prompts, tknized_prompts, compound_prompts_text = self.prompt_learner(cls_id=self.cls_id)
             text_features = self.encode_text_learn(
                 prompts,
                 tknized_prompts,
                 compound_prompts_text
             ).float()                                                                                           # -> [K, D]
+            K, D = text_features.shape
             text_features = torch.stack(torch.chunk(text_features, dim=0, chunks=2), dim=1)                     # -> [1, K, D]
             text_features = text_features / (text_features.norm(dim=-1, keepdim=True) + epsilon)                # -> [1, K, D]
             text_normal_ref = text_features[:, 0]                                                               # -> [D]
             text_anomalous_ref = text_features[:, 1]                                                            # -> [D]
 
             user_anomalous_ref = None
-            if user_tknized_prompts:
+            if user_tknized_prompts.numel():
                 all_text_features = self.encode_text_learn(
-                    prompts=self.token_embedding(tknized_prompts).type(self.type),
+                    prompts=self.token_embedding(user_tknized_prompts).type(self.dtype),
                     tokenized_prompts=user_tknized_prompts,
                     deep_compound_prompts_text=[]
                 ).float()                                                                                       # -> [P, D]
@@ -259,6 +258,7 @@ class AnomalyCLIP(nn.Module):
                 grid_size = int(np.sqrt(N - 1))
 
                 resized_masks = F.interpolate(s_y.unsqueeze(1).float(), size=(grid_size, grid_size), mode='nearest').squeeze(1) # -> [S, G, G]
+                print("rszed masks", resized_masks.shape)
                 resized_masks_flat = resized_masks.view(S, -1) > 0                                              # -> [S, G*G] (bool)
                 
                 patches_only = support_patch_features[:, 1:, :]                                                 # -> [S, N-1, D]
@@ -269,7 +269,7 @@ class AnomalyCLIP(nn.Module):
                 normal_patches = patches_only_flat[~mask_flat]                                                  # -> [NumNorm, D]
 
                 if anomalous_patches.shape[0] == 0: raise ValueError("No anomalous patches in the suppport set.")
-                if normal_patches.shape[0] == 0: raise ValueError("No normal patches in the suppoert set.")
+                if normal_patches.shape[0] == 0: raise ValueError("No normal patches in the support set.")
 
                 if user_anomalous_ref is not None and anomalous_patches.numel() > 0:
                     anomalous_patches_norm = anomalous_patches / anomalous_patches.norm(dim=-1, keepdim=True)   # -> [NumAnom, D]
@@ -287,6 +287,7 @@ class AnomalyCLIP(nn.Module):
                 final_normal_ref = final_normal_ref / (final_normal_ref.norm(dim=-1, keepdim=True) + epsilon)               # -> [D]
                 final_anomalous_ref = final_anomalous_ref / (final_anomalous_ref.norm(dim=-1, keepdim=True) + epsilon)      # -> [D]
 
+
                 layer_prototypes = torch.stack([final_normal_ref, final_anomalous_ref])                         # -> [K, D]
                 final_prototypes_per_layer.append(layer_prototypes)                                             # -> list[Tensor] of L tensors [K, D]
 
@@ -296,7 +297,8 @@ class AnomalyCLIP(nn.Module):
             for i, query_patch_feature in enumerate(query_patch_features_multiscale):
                 patch_feature_normalized = query_patch_feature / (query_patch_feature.norm(dim=-1, keepdim=True) + epsilon) # -> [B, N, D]
                 prototypes_for_this_layer = final_prototypes_per_layer[i]                                       # -> [K, D]
-                
+                prototypes_for_this_layer = prototypes_for_this_layer.squeeze(dim=1)
+
                 similarity, _ = compute_similarity(patch_feature_normalized, prototypes_for_this_layer)         # -> [B, N, K]
                 similarity = similarity / self.config.contrast                                                              # -> [B, N, K]
                 
@@ -345,14 +347,15 @@ class contructor_AnomalyCLIP:
         
         self.config = config
 
-    def intantiate_model(self):
+    def instantiate_model(self):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-        if self.config.checkpoint:
-            state_dict = self.config.checkpoint
-        else:
-            model_path = Path("./weights").expanduser() / f"ViT-L-14-336px.pt"
-            state_dict = torch.load(model_path, map_location=device)
+        # if self.config.checkpoint:
+        #     state_dict = self.config.checkpoint
+        # else:
+        model_path = Path("fewpy").expanduser() / "models" / "anomalyCLIP" / "weights" / f"ViT-L-14-336px.pt"
+        model = torch.jit.load(model_path, map_location=device)
+        state_dict = model.state_dict()
 
         vision_width = state_dict["visual.conv1.weight"].shape[0]
         vision_layers = len(
@@ -405,7 +408,6 @@ class contructor_AnomalyCLIP:
         model.load_state_dict(state_dict)
         model.prompt_learner = AnomalyCLIP_PromptLearner(model.to("cpu"), dsgn_details)
         model.prompt_learner.to(device)
-    def get_model_in_features(self):
 
         model.to(device)
         model.visual.DAPM_replace(DPAM_layer=20)

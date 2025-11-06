@@ -5,9 +5,9 @@ from typing import List, Union
 
 import torch
 import torch.nn as nn
-from pkg_resources import packaging
+import packaging
 
-from .AnomalyCLIP_lib.simple_tokenizer import SimpleTokenizer as _Tokenizer
+from .simple_tokenizer import SimpleTokenizer as _Tokenizer
 
 _tokenizer = _Tokenizer()
 
