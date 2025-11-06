@@ -226,7 +226,7 @@ class AnomalyCLIP(nn.Module):
                 s_y,
                 user_tknized_prompts,
                 epsilon: float=1e-8):
-
+    
         with torch.no_grad():
             prompts, tknized_prompts, compound_prompts_text = self.prompt_learner(cls_id=self.cls_id)
             text_features = self.encode_text_learn(
@@ -258,7 +258,6 @@ class AnomalyCLIP(nn.Module):
                 grid_size = int(np.sqrt(N - 1))
 
                 resized_masks = F.interpolate(s_y.unsqueeze(1).float(), size=(grid_size, grid_size), mode='nearest').squeeze(1) # -> [S, G, G]
-                print("rszed masks", resized_masks.shape)
                 resized_masks_flat = resized_masks.view(S, -1) > 0                                              # -> [S, G*G] (bool)
                 
                 patches_only = support_patch_features[:, 1:, :]                                                 # -> [S, N-1, D]
@@ -338,7 +337,7 @@ class AnomalyCLIP(nn.Module):
             return final_map_filtered
 
 
-@register_constructor(name="anomalyCLIP")
+@register_constructor(name="anomalyCLIP", config_cls=AnomalyCLIPConfig)
 class contructor_AnomalyCLIP:
 
     model_cls_mame = "anomalyCLIP"
