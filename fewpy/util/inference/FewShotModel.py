@@ -1,5 +1,5 @@
 from torch import Tensor
-from inspect import signature
+from inspect import signature, Parameter
 from pydantic import BaseModel
 
 from .preprocessor import Preprocessor
@@ -11,7 +11,15 @@ class FewShotModel:
     def __init__(self, model: str, config: BaseModel=None, preprocessors: list[Preprocessor]=[]) -> None:
         
         self.model, self.device = self.__load_model(model, config)
-        self.params = signature(self.model.predict)
+        params = signature(self.model.predict).parameters
+        self.default_params = []
+        self.params = []
+        for k, p in params.items():
+            if p.default is not Parameter.empty:
+                self.default_params.append(k)
+            else:
+                self.params.append(k)
+        self.preprocessors = []
         if isinstance(preprocessors, list):
             self.preprocessors += preprocessors
 
@@ -43,8 +51,11 @@ class FewShotModel:
 
             kwargs[step.output_key] = result
 
-        try:
-            model_inputs = [kwargs[k] for k in self.params]
+        try:   
+            model_inputs = {k: kwargs[k] for k in self.params}
+            for k in self.default_params:
+                if k in kwargs:
+                    model_inputs[k] = kwargs[k]
         except KeyError as e:
             raise ValueError(
                     f"Missing input key '{e.args[0]}' for model. "
