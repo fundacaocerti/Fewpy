@@ -1,5 +1,7 @@
 from collections import OrderedDict
 from functools import partial
+from fewpy.util.inference.register import register_constructor
+from .config import FPTRANSConfig
 #from losses import get as get_loss
 
 import numpy as np
@@ -33,7 +35,7 @@ class FPTRANS(nn.Module):
         super(FPTRANS, self).__init__()
         
         self.Probs_return = args.Probs_return
-        self.logger = logger
+        # self.logger = logger
         self.args = args
         self.shot = args.kshot
         self.drop_dim = args.drop_dim
@@ -402,6 +404,7 @@ class FPTRANS(nn.Module):
         return self(batch['query_img'], batch['support_imgs'],batch['support_masks'])
 
 
+@register_constructor(name="FPTRANS", config_cls=FPTRANSConfig)
 class constructor_FPTRANS():
     def __init__(self, args):
             
@@ -424,7 +427,7 @@ class constructor_FPTRANS():
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
 
-        if self.args.checkpoint:
+        if not self.args.checkpoint is None:
             state_dict = self.args.checkpoint
         else:
             weight_path = Path("./weights").expanduser() / f"{self.args.data_set}" \
