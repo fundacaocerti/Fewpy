@@ -3,7 +3,7 @@ name = "fewpy"
 version = "0.1.0"
 description = "An Open Source project for Few-Shot Learning"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 authors = ["The Fundação CERTI Organization"]
 repository = "https://github.com/fundacaocerti/Fewpy"
 license = "MIT"
@@ -34,13 +34,21 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence"
 ]
 dependencies = [
+    "detectron2",
     "ftfy>=6.3.1",
+    "numpy==2.3.4",
     "open-clip-torch>=3.2.0",
+    "opencv-python>=4.11.0.86",
     "packaging>=25.0",
+    "pandas>=2.3.3",
     "pydantic>=2.12.3",
     "regex>=2025.11.3",
+    "scikit-image==0.25.2",
     "scipy>=1.13.1",
+    "setuptools==80.9.0",
     "tdqm>=0.0.1",
+    "torch==2.9.0",
+    "torchvision==0.24.0",
 ]
 
 [dependency-groups]
@@ -55,3 +63,9 @@ poe = [
 [tool.ruff]
 line-length = 80
 lint.extend-select = ["I", "W", "E"]
+
+[tool.uv.extra-build-dependencies]
+detectron2 = ["torch"]
+
+[tool.uv.sources]
+detectron2 = { git = "https://github.com/facebookresearch/detectron2.git", rev = "v0.6" }
