@@ -1,5 +1,5 @@
-from fewx import modeling
-from fewx import config
-from fewx import layers
+from fewpy.models.Airshot.fewx import modeling
+from fewpy.models.Airshot.fewx import config
+from fewpy.models.Airshot.fewx import layers
 
 __version__ = "0.1"
