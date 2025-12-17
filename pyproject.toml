@@ -39,13 +39,13 @@ dependencies = [
     "pandas>=2.3.3",
     "pydantic>=2.12.3",
     "regex>=2025.11.3",
-    "scikit-image>=0.24.0",  # Fixed: 0.19.3 is incompatible with Py3.11 & NumPy 2.x
+    "scikit-image>=0.24.0",  
     "scipy>=1.13.1",
     "setuptools==80.9.0",
-    "tqdm>=4.66.0",          # Fixed: Typo 'tdqm' -> 'tqdm'
+    "tqdm>=4.66.0",        
     "torch==2.9.0",
     "torchvision==0.24.0",
-    "pillow>=10.0.0",        # Fixed: Updated for Python 3.11 security/compatibility
+    "pillow>=10.0.0",
 ]
 
 [dependency-groups]
@@ -65,6 +65,4 @@ lint.extend-select = ["I", "W", "E"]
 detectron2 = ["torch"]
 
 [tool.uv.sources]
-# Fixed: Removed 'rev = "v0.6"'. v0.6 is incompatible with Torch 2.x.
-# Using the main branch is required for modern PyTorch support.
 detectron2 = { git = "https://github.com/facebookresearch/detectron2.git" }
