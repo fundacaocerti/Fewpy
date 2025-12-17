@@ -167,7 +167,7 @@ class FsodRCNN(nn.Module):
         storage.put_image(vis_name, vis_img)
         #    break  # only visualize one image in a batch
 
-    def forward(self, batched_inputs):
+    def forward(self, x):
         """
         Args:
             batched_inputs: a list, batched outputs of :class:`DatasetMapper` .
@@ -186,8 +186,10 @@ class FsodRCNN(nn.Module):
                 The :class:`Instances` object has the following keys:
                 "pred_boxes", "pred_classes", "scores", "pred_masks", "pred_keypoints"
         """
+        batched_inputs = x["batched_inputs"]
         if not self.training:
-            self.init_model()
+            self.init_model(x["support_set"])
+            # print("starting inference")
             return self.inference(batched_inputs, sort_type=self.sort_type)
         
         images, support_images = self.preprocess_image(batched_inputs)
@@ -333,11 +335,6 @@ class FsodRCNN(nn.Module):
             for item in neg_detector_proposals:
                 item.gt_classes = torch.full_like(item.gt_classes, 1)
             
-
-            
-
-            
-            
             detector_proposals = [Instances.cat(pos_detector_proposals + neg_detector_proposals)]
             if self.training:
                 predictions = detector_pred_class_logits, detector_pred_proposal_deltas
@@ -368,28 +365,33 @@ class FsodRCNN(nn.Module):
         losses.update(proposal_losses)        
         return losses
 
-    def init_model(self):
+    def init_model(self, support_set=None):
         self.support_on = True #False
-        
-        
+
+
+
         support_dir = './support_dir'
         if not os.path.exists(support_dir):
             os.makedirs(support_dir)
 
         support_file_name = os.path.join(support_dir, 'support_feature.pkl')
-        if not os.path.exists(support_file_name):
-            if "coco" in self.testset:
-                support_path = './datasets/coco/{}_shot_support_df.pkl'.format(self.testshots)
-            elif "voc" in self.testset:
-                support_path = './datasets/voc/{}_shot_support_df.pkl'.format(self.testshots)
-            else:
-                support_path = './datasets/SUBT/{}_shot_{}_val.pkl'.format(self.testshots, self.testset[-1])
-            support_df = pd.read_pickle(support_path)
+        if support_set is not None:
+            # if "coco" in self.testset:
+            #     support_path = './datasets/coco/{}_shot_support_df.pkl'.format(self.testshots)
+            # elif "voc" in self.testset:
+            #     support_path = './datasets/voc/{}_shot_support_df.pkl'.format(self.testshots)
+            # else:
+            #     support_path = './datasets/SUBT/{}_shot_{}_val.pkl'.format(self.testshots, self.testset[-1])
+            # support_df = pd.read_pickle(support_path)
+            
+            support_df = pd.DataFrame(support_set)
 
             metadata = MetadataCatalog.get(self.testset)
+            # print("testset", self.testset)
             # unmap the category mapping ids for COCO
             reverse_id_mapper = lambda dataset_id: metadata.thing_dataset_id_to_contiguous_id[dataset_id]  # noqa
             support_df['category_id'] = support_df['category_id'].map(reverse_id_mapper)
+
 
             support_dict = {'res2_avg': {}, 'res3_avg': {}, 'res4_avg': {}, 'res5_avg': {}}
             for cls in support_df['category_id'].unique():
@@ -398,25 +400,31 @@ class FsodRCNN(nn.Module):
                 support_box_all = []
 
                 for index, support_img_df in support_cls_df.iterrows():
-                    if "coco" in self.testset:
-                        img_path = os.path.join('./datasets/coco', support_img_df['file_path'])
-                    elif "voc" in self.testset:
-                        img_path = os.path.join('./datasets/voc', support_img_df['file_path'])
+                    # if "coco" in self.testset:
+                    #     img_path = os.path.join('./datasets/coco', support_img_df['file_path'])
+                    # elif "voc" in self.testset:
+                    #     img_path = os.path.join('./datasets/voc', support_img_df['file_path'])
+                    # else:
+                    #     img_path = os.path.join('./datasets/SUBT', support_img_df['file_path'])
+                    if isinstance(support_img_df['image'], torch.Tensor):
+                        support_data = support_img_df['image']
+                    elif isinstance(support_img_df['image'], str):
+                        support_data = utils.read_image(support_img_df['image'], format='BGR')
+                        support_data = torch.as_tensor(np.ascontiguousarray(support_data.transpose(2, 0, 1)))
                     else:
-                        img_path = os.path.join('./datasets/SUBT', support_img_df['file_path'])
-                    support_data = utils.read_image(img_path, format='BGR')
-                    support_data = torch.as_tensor(np.ascontiguousarray(support_data.transpose(2, 0, 1)))
+                        raise ValueError(f"support_set[{index}]['image'] should be either torch.Tensor or str. Found: {type(support_img_df['image'])}")
+
+
                     support_data_all.append(support_data)
 
                     support_box = support_img_df['support_box']
-                    support_box_all.append(Boxes([support_box]).to(self.device))
+                    support_box_all.append(Boxes(support_box).to(self.device))
 
                 # support images
                 support_images = [x.to(self.device) for x in support_data_all]
                 support_images = [(x - self.pixel_mean) / self.pixel_std for x in support_images]
                 support_images = ImageList.from_tensors(support_images, self.backbone.size_divisibility)
                 support_features = self.backbone(support_images.tensor)
-
                 support_pooled = self.roi_heads.roi_pooling(support_features, support_box_all)
                 support_features_2 = support_pooled["res2"].mean(0, True) # pos support features from res2, average all supports, for rcnn
                 support_features_pool_2 = support_features_2.mean(dim=[2, 3], keepdim=True) # average pooling support feature for attention rpn
@@ -440,12 +448,16 @@ class FsodRCNN(nn.Module):
                 del support_features
                 del res5_feature
                 del res5_avg
-
+                
             with open(support_file_name, 'wb') as f:
                pickle.dump(support_dict, f)
             self.logger.info("=========== Offline support features are generated from seed: {}. ===========".format(self.test_seed))
             self.logger.info("============ Few-shot object detetion will start. =============")
-            sys.exit(0)
+            # sys.exit(0)
+            self.support_dict = support_dict
+            for res_key, res_dict in self.support_dict.items():
+                for cls_key, feature in res_dict.items():
+                    self.support_dict[res_key][cls_key] = feature.cuda()
             
         else:
             with open(support_file_name, "rb") as hFile:
@@ -602,11 +614,14 @@ class FsodRCNN(nn.Module):
         torch.cuda.synchronize()
         aastart = time.time()
         results, _ = self.roi_heads.eval_with_support(query_images, query_features, support_proposals_dict, support_box_features_dict)
+        # print("pre postprocess result", results)
+        # print()
         torch.cuda.synchronize()
         aaend = time.time()
-
+        
         # Gradcam
         if do_postprocess:
+            # print("posprocessing")
             return FsodRCNN._postprocess(results, batched_inputs, images.image_sizes), FsodRCNN._postprocess(proposals, batched_inputs, images.image_sizes)
         
         
@@ -649,6 +664,9 @@ class FsodRCNN(nn.Module):
         Normalize, pad and batch the input images.
         """
         images = [x["image"].to(self.device) for x in batched_inputs]
+        # print("shape x", images[0].shape)
+        # print("shape pixel mean", self.pixel_mean.shape)
+        # print()
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
         images = ImageList.from_tensors(images, self.backbone.size_divisibility)
         if self.training:

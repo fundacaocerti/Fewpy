@@ -122,6 +122,8 @@ def fsod_fast_rcnn_inference_single_image(
     boxes.clip(image_shape)
     boxes = boxes.tensor.view(-1, num_bbox_reg_classes, 4)  # R x C x 4
 
+    # for box, cls in zip(boxes, pred_cls):
+    #     print(f"boxes:{box}, cls:{cls}")
     # Filter results based on detection scores
     filter_mask = scores > score_thresh  # R x K
     # R' x 2. First column contains indices of the R predictions;
@@ -131,9 +133,24 @@ def fsod_fast_rcnn_inference_single_image(
         boxes = boxes[filter_inds[:, 0], 0]
     else:
         boxes = boxes[filter_mask]
+    scores = scores.cuda()
+    indices = indices.cuda()
+    pred_cls = pred_cls.cuda()
+
+    # perc_scores = scores * 100
+    # viz_filter = perc_scores > 3
+    # print("SCORES SCORES SCORES SCORES --------------------------------------------")
+    # print("SCORES SCORES SCORES SCORES --------------------------------------------")
+    # print("SCORES SCORES SCORES SCORES --------------------------------------------")
+    # print("scores for inference (%)\n", perc_scores[viz_filter])
+    # print("SCORES SCORES SCORES SCORES --------------------------------------------")
+    # print("SCORES SCORES SCORES SCORES --------------------------------------------")
+    # print("SCORES SCORES SCORES SCORES --------------------------------------------")
+    
     scores = scores[filter_mask]
     indices = indices[filter_mask]
     pred_cls = pred_cls[filter_mask]
+    
 
     # Apply per-class NMS
     '''    Performs non-maximum suppression in a batched fashion.
@@ -156,6 +173,7 @@ def fsod_fast_rcnn_inference_single_image(
         keep = keep[:topk_per_image] # keep top k score
     #boxes, scores, filter_inds = boxes[keep], scores[keep], filter_inds[keep]
     boxes, scores, filter_inds, pred_cls = boxes[keep], scores[keep], filter_inds[keep], pred_cls[keep]
+    # keep = keep.to("cpu")
     indices = indices[keep]
 
     result = Instances(image_shape)
@@ -601,11 +619,12 @@ class FsodFastRCNNOutputLayers(nn.Module):
             list[Tensor]: same as `fsod_fast_rcnn_inference`.
         """
         boxes = self.predict_boxes(predictions, proposals) # get box 
-        scores = self.predict_probs(predictions, proposals) # get probability 
+        scores = self.predict_probs(predictions, proposals) # get probability
 
         num_inst_per_image = [len(p) for p in proposals]
         pred_cls = pred_cls.split(num_inst_per_image, dim=0) # 每个图像中instance的得分
         image_shapes = [x.image_size for x in proposals]
+        # print("predicting with threshold=", self.test_score_thresh)
         return fsod_fast_rcnn_inference(
             pred_cls,
             boxes,

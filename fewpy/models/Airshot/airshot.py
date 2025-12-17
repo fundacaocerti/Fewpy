@@ -17,13 +17,14 @@ from pathlib import Path
 
 from detectron2.checkpoint import DetectionCheckpointer
 
-from fewx.data.dataset_mapper import DatasetMapperWithSupport
-from fewx.data.build import build_detection_train_loader, build_detection_test_loader
-from fewx.solver import build_optimizer
-from fewx.evaluation import COCOEvaluator
+from fewpy.models.Airshot.config import AirShotConfig
+from fewpy.models.Airshot.fewx.data.dataset_mapper import DatasetMapperWithSupport
+from fewpy.models.Airshot.fewx.data.build import build_detection_train_loader, build_detection_test_loader
+from fewpy.models.Airshot.fewx.solver import build_optimizer
+from fewpy.models.Airshot.fewx.evaluation import COCOEvaluator
 
 import torch
-from detectron2.config import get_cfg
+from fewpy.models.Airshot.fewx.config import get_cfg
 from detectron2.modeling import build_model
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.engine import DefaultPredictor
@@ -34,66 +35,69 @@ from typing import List
 from fewpy.util.inference.register import register_constructor
 
 
-import torch
+# class Predictor(DefaultPredictor):
 
+    # @classmethod
+    # def build_train_loader(cls, cfg):
+    #     """
+    #     Returns:
+    #         iterable
+    #     It calls :func:`detectron2.data.build_detection_train_loader` with a customized
+    #     DatasetMapper, which adds categorical labels as a semantic mask.
+    #     """
+    #     mapper = DatasetMapperWithSupport(cfg)
+    #     return build_detection_train_loader(cfg, mapper)
 
-from .config import AirShotConfig
+    # @classmethod
+    # def build_test_loader(cls, cfg, dataset_name):
+    #     """
+    #     Returns:
+    #         iterable
+    #     It now calls :func:`detectron2.data.build_detection_test_loader`.
+    #     Overwrite it if you'd like a different data loader.
+    #     """
+    #     return build_detection_test_loader(cfg, dataset_name)
 
+    # @classmethod
+    # def build_optimizer(cls, cfg, model):
+    #     """
+    #     Returns:
+    #         torch.optim.Optimizer:
+    #     It now calls :func:`detectron2.solver.build_optimizer`.
+    #     Overwrite it if you'd like a different optimizer.
+    #     """
+    #     return build_optimizer(cfg, model)
 
-class Predictor(DefaultPredictor):
-
-    @classmethod
-    def build_train_loader(cls, cfg):
-        """
-        Returns:
-            iterable
-        It calls :func:`detectron2.data.build_detection_train_loader` with a customized
-        DatasetMapper, which adds categorical labels as a semantic mask.
-        """
-        mapper = DatasetMapperWithSupport(cfg)
-        return build_detection_train_loader(cfg, mapper)
-
-    @classmethod
-    def build_test_loader(cls, cfg, dataset_name):
-        """
-        Returns:
-            iterable
-        It now calls :func:`detectron2.data.build_detection_test_loader`.
-        Overwrite it if you'd like a different data loader.
-        """
-        return build_detection_test_loader(cfg, dataset_name)
-
-    @classmethod
-    def build_optimizer(cls, cfg, model):
-        """
-        Returns:
-            torch.optim.Optimizer:
-        It now calls :func:`detectron2.solver.build_optimizer`.
-        Overwrite it if you'd like a different optimizer.
-        """
-        return build_optimizer(cfg, model)
-
-    @classmethod
-    def build_evaluator(cls, cfg, dataset_name, output_folder=None):
-        if output_folder is None:
-            output_folder = Path(cfg.OUTPUT_DIR) / "inference"
-        return COCOEvaluator(dataset_name, cfg, True, output_folder)
+    # @classmethod
+    # def build_evaluator(cls, cfg, dataset_name, output_folder=None):
+    #     if output_folder is None:
+    #         output_folder = Path(cfg.OUTPUT_DIR) / "inference"
+    #     return COCOEvaluator(dataset_name, cfg, True, output_folder)
 
 
 class AirShot(torch.nn.Module):
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, device="cpu"):
         super(AirShot, self).__init__()
 
         self.model = build_model(cfg)
+        self.model.to(device)
         self.model.eval()
+
+        self.device = device
 
         DetectionCheckpointer(self.model, save_dir=cfg.OUTPUT_DIR).load(
             cfg.MODEL.WEIGHTS
         )
-        self.predictor = Predictor(cfg)
+        self.cached = False
+        # self.predictor = Predictor(cfg)
 
-    def forward(self, x: List[torch.Tensor],  s_x: List[torch.Tensor], s_y: List[torch.Tensor]):
+    def forward(self, x: dict):
+
+        return self.model(x)
+    
+    def predict(self, x: List[torch.Tensor], s_x: List[torch.Tensor] | List[str], s_y: List[dict]):
+
         """
         self.model.forward:
         Args:
@@ -114,50 +118,58 @@ class AirShot(torch.nn.Module):
                 "pred_boxes", "pred_classes", "scores", "pred_masks", "pred_keypoints"
         """
 
-        support_set = [
-            Instances(
-                (s_xi.size(-2), s_xi.size(-1)), 
-                gt_boxes=Boxes(torch.as_tensor([bbox for bbox in s_yi["bboxes"]], dtype=torch.float322)),
-                gt_classes=torch.as_tensor([gt_cls for gt_cls in s_yi["cls"]], dtype=torch.int64)
-            ) for s_xi, s_yi in zip(s_x, s_y)]
-
-        query_dicts = [{
-            "image": xi,
-            "height": xi.size(-2),
-            "width": xi.size(-1),
-        } for xi in x]
-
-        batched_inputs = [{
-            "query_images": ImageList.from_tensors(x),
-            "query_dicts": query_dicts,
-            "support_instances": support_set,
-            "support_images": ImageList.from_tensors(s_x)
-        }]
-        
-        return self.model(self.predictor.transform_gpu(batched_inputs))
-    
-    def prefict(self, x: torch.Tensor):
-
         with torch.no_grad():
-            return self(x)
+
+            if not self.cached:
+                support_set = [
+                    {
+                        "support_box": s_yi["bboxes"],
+                        "category_id": s_yi["cls"],
+                        "image": s_xi
+                    } for s_xi, s_yi in zip(s_x, s_y)]
+            else:
+                support_set = None
+
+
+            batched_inputs = [{
+                "image": xi.to(self.device),
+                "height": xi.size(-2),
+                "width": xi.size(-1),
+            } for xi in x]
+
+            x = {
+                "batched_inputs": batched_inputs,
+                "support_set": support_set
+            }
+
+            self.cached = True
+
+            result = self(x)
+            print("result")
+            return result
 
 @register_constructor(name="AirShot", config_cls=AirShotConfig)
 class constructor_AirShot:
 
     def __init__(self, cfg):
 
-
-        cfg_path = Path("fewpy").expanduser() / "models" / "AirShot" / "configs" \
+        cfg_path = Path("fewpy").expanduser() / "models" / "Airshot" / "configs" \
             / "fsod" / "R101" / f"test_R_101_C4_1x_subt3_a.yaml"
-        weights_path = Path("fewpy").expanduser() / "models" / "AirShot" / "weights" \
+        weights_path = Path("fewpy").expanduser() / "models" / "Airshot" / "weights" \
             / "checkpoint.pth"
 
         DatasetCatalog.register(cfg.DATASETNAME, lambda : [])
-        MetadataCatalog.get(cfg.DATASETNAME).set(thing_classes=cfg.CLASSNAMES)
+        metadata = MetadataCatalog.get(cfg.DATASETNAME)
+        metadata.set(thing_classes=cfg.CLASSNAMES)
+        metadata.set(thing_dataset_id_to_contiguous_id = cfg.mapping_to_contiguous_ids)
+
+        print("cfg", cfg)
 
         self.cfg = get_cfg()
         self.cfg.merge_from_file(cfg_path)
-        self.cfg.MODEL.WEIGHTS = weights_path
+        self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = cfg.confidence_threshold
+        self.cfg.DATASETS.TEST = [cfg.DATASETNAME]
+        self.cfg.MODEL.WEIGHTS = str(weights_path)
         self.cfg.freeze()
         
     def instantiate_model(self, device=None):
@@ -165,7 +177,7 @@ class constructor_AirShot:
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        model = AirShot(self.cfg)
+        model = AirShot(self.cfg, device)
         model.eval()
         model.to(device)
 
