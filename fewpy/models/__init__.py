@@ -7,16 +7,23 @@ invalid_dir = ["__pycache__", "weights"]
 
 def check_for_dep(path):
 
+    log = ""
     for root, dirnames, _ in os.walk(str(path)):
         for dir in dirnames:
-            if dir not in invalid_dir: check_inside(os.path.join(root, dir))
+            if dir not in invalid_dir: 
+                # print("checking inside", dir)
+                log += check_inside(os.path.join(root, dir))
+
+    with open("./import.log", "w") as f:
+        f.write(log)
+
 
 def check_inside(path):
 
     pkg_name = __name__
-    import_errors = 0
     failed_imports = []
     errors = []
+    log = ""
 
     for _, name, ispkg in pkgutil.iter_modules([path]):
         # print("looking at module", name)
@@ -31,17 +38,17 @@ def check_inside(path):
                     importlib.import_module(module)
                     # print("imported module", module)
         except Exception as e:
-            import_errors += 1
             errors.append(e)
             failed_imports.append(name)
             
-        print(f"Failed to import {import_errors} modules. See ./import.log")
+        # print(f"Failed to import {import_errors} modules. See ./import.log")
         
-        log = ""
+        
         for error, module in zip(errors, failed_imports):
             log += f"Failed to import module {module}. {error}\n"
-        with open("./import.log", "w") as f:
-            f.write(log)
+    
+    return log
+        
 
 print("importing models")
 check_for_dep(os.path.dirname(__file__))
