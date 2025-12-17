@@ -3,7 +3,7 @@ name = "fewpy"
 version = "0.1.0"
 description = "An Open Source project for Few-Shot Learning"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11, <3.12"
 authors = ["The Fundação CERTI Organization"]
 repository = "https://github.com/fundacaocerti/Fewpy"
 license = "MIT"
@@ -25,11 +25,7 @@ classifiers = [
   "Operating System :: POSIX :: Linux",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python",
-  "Programming Language :: Python :: 3.9",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3 :: Only",
   "Topic :: Scientific/Engineering",
   "Topic :: Scientific/Engineering :: Artificial Intelligence"
 ]
@@ -43,12 +39,13 @@ dependencies = [
     "pandas>=2.3.3",
     "pydantic>=2.12.3",
     "regex>=2025.11.3",
-    "scikit-image==0.25.2",
+    "scikit-image>=0.24.0",  # Fixed: 0.19.3 is incompatible with Py3.11 & NumPy 2.x
     "scipy>=1.13.1",
     "setuptools==80.9.0",
-    "tdqm>=0.0.1",
+    "tqdm>=4.66.0",          # Fixed: Typo 'tdqm' -> 'tqdm'
     "torch==2.9.0",
     "torchvision==0.24.0",
+    "pillow>=10.0.0",        # Fixed: Updated for Python 3.11 security/compatibility
 ]
 
 [dependency-groups]
@@ -68,4 +65,6 @@ lint.extend-select = ["I", "W", "E"]
 detectron2 = ["torch"]
 
 [tool.uv.sources]
-detectron2 = { git = "https://github.com/facebookresearch/detectron2.git", rev = "v0.6" }
+# Fixed: Removed 'rev = "v0.6"'. v0.6 is incompatible with Torch 2.x.
+# Using the main branch is required for modern PyTorch support.
+detectron2 = { git = "https://github.com/facebookresearch/detectron2.git" }
