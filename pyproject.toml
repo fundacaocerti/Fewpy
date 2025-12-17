@@ -3,7 +3,7 @@ name = "fewpy"
 version = "0.1.0"
 description = "An Open Source project for Few-Shot Learning"
 readme = "README.md"
-requires-python = ">=3.11, <3.12"
+requires-python = ">=3.11"
 authors = ["The Fundação CERTI Organization"]
 repository = "https://github.com/fundacaocerti/Fewpy"
 license = "MIT"
