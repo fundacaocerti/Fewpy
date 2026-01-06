@@ -347,7 +347,7 @@ class contructor_AnomalyCLIP:
         self.config = config
 
     def instantiate_model(self):
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # if self.config.checkpoint:
         #     state_dict = self.config.checkpoint
