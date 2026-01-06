@@ -18,18 +18,12 @@ from pathlib import Path
 from detectron2.checkpoint import DetectionCheckpointer
 
 from fewpy.models.Airshot.config import AirShotConfig
-from fewpy.models.Airshot.fewx.data.dataset_mapper import DatasetMapperWithSupport
-from fewpy.models.Airshot.fewx.data.build import build_detection_train_loader, build_detection_test_loader
-from fewpy.models.Airshot.fewx.solver import build_optimizer
-from fewpy.models.Airshot.fewx.evaluation import COCOEvaluator
 
 import torch
 from fewpy.models.Airshot.fewx.config import get_cfg
 from detectron2.modeling import build_model
 from detectron2.checkpoint import DetectionCheckpointer
-from detectron2.engine import DefaultPredictor
 from detectron2.data import DatasetCatalog, MetadataCatalog
-from detectron2.structures import Instances, Boxes, ImageList
 from typing import List
 
 from fewpy.util.inference.register import register_constructor
@@ -145,7 +139,7 @@ class AirShot(torch.nn.Module):
             self.cached = True
 
             result = self(x)
-            print("result")
+            # print("result")
             return result
 
 @register_constructor(name="AirShot", config_cls=AirShotConfig)
@@ -163,7 +157,7 @@ class constructor_AirShot:
         metadata.set(thing_classes=cfg.CLASSNAMES)
         metadata.set(thing_dataset_id_to_contiguous_id = cfg.mapping_to_contiguous_ids)
 
-        print("cfg", cfg)
+        # print("cfg", cfg)
 
         self.cfg = get_cfg()
         self.cfg.merge_from_file(cfg_path)
