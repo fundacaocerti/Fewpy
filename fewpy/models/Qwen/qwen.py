@@ -13,9 +13,9 @@ import torch
 
 class QwenWrapper:
 
-    def __init__(self, cfg, qwen: torch.nn.Module, processor):
+    def __init__(self, cfg, model: torch.nn.Module, processor):
         self.cfg = cfg
-        self.model = qwen
+        self.model = model
         self.processor = processor
 
         classnames = ", ".join(self.cfg.classnames)
@@ -105,16 +105,13 @@ class contructor_Qwen:
         
         self.config = config
 
-    def instantiate_model(self, device):
+    def instantiate_model(self):
 
         model_id = "Qwen/Qwen3-VL-8B-Instruct"
 
-        if device is None:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
         model = AutoModelForImageTextToText.from_pretrained(
             model_id, 
-            device_map=device
+            device_map="auto"
         )
         processor = AutoProcessor.from_pretrained(model_id)
 
@@ -124,4 +121,4 @@ class contructor_Qwen:
             processor=processor
         )
 
-        return model_wrapper, device
+        return model_wrapper, "auto"
