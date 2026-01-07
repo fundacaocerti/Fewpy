@@ -1,0 +1,39 @@
+metadata:
+  name: fewpy-auto-annotate
+  namespace: cvat
+  annotations:
+    name: Few-Shot Learning (Fewpy)
+    type: detector
+    framework: pytorch
+    spec: |
+      [
+        { "id": 1, "name": "object" }
+      ]
+
+spec:
+  resources:
+    limits:
+      nvidia.com/gpu: 1
+
+  handler: main:handler
+  runtime: python:3.11
+  
+  build:
+    image: cvat/fewpy:latest
+    baseImage: python:3.11-slim
+    
+    directives:
+      preCopy:
+        - kind: RUN
+          value: |
+            apt-get update && apt-get install -y --no-install-recommends \
+            curl git build-essential pkg-config libgl1-mesa-glx libglib2.0-0 \
+            python3-dev ninja-build && \
+            rm -rf /var/lib/apt/lists/*
+        
+        - kind: RUN
+          value: curl -LsSf https://astral.sh/uv/install.sh | sh && mv /root/.local/bin/uv /usr/local/bin/uv
+
+      postCopy:
+        - kind: RUN
+          value: uv pip install --system .
