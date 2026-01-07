@@ -23,6 +23,7 @@ spec:
     baseImage: python:3.11-slim
     
     directives:
+    
       preCopy:
         - kind: RUN
           value: |
@@ -34,6 +35,13 @@ spec:
         - kind: RUN
           value: curl -LsSf https://astral.sh/uv/install.sh | sh && mv /root/.local/bin/uv /usr/local/bin/uv
 
+        - kind: RUN
+          value: mkdir -p /opt/nuclio/support_set
+
       postCopy:
         - kind: RUN
           value: uv pip install --system .
+
+        - kind: RUN
+          value: cp -r /opt/nuclio/support_set /opt/nuclio/testdata2
+        
