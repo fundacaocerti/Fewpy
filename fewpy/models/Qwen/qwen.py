@@ -23,7 +23,11 @@ class QwenWrapper:
 
         self.prompt = f"Outline the position of objects of classes: {classnames}. Then output all the coordinates and classes of these objects in JSON format."
 
-    def predict(self, x, s_x=None, s_y=None):
+    def predict(self, x, s_x=None, s_y=None, single_cls: str=None):
+
+        prompt = self.prompt
+        if single_cls is not None:
+            prompt = f"Outline the position of objects of class={single_cls}. Then output all the coordinates and classes of these objects in JSON format."
 
         messages = []
         if (not s_x is None) and (s_y is None):
@@ -32,7 +36,7 @@ class QwenWrapper:
                     "role": "user",
                     "content": [
                         {"type": "image", "image": example},
-                        {"type": "text", "text": self.prompt}
+                        {"type": "text", "text": prompt}
                     ],
                 }
                 target_msg = {
@@ -52,7 +56,7 @@ class QwenWrapper:
             "role": "user",
             "content": [
                 {"type": "image", "image": x},
-                {"type": "text", "text": self.prompt}
+                {"type": "text", "text": prompt}
             ],
         }
         messages.append(task_msg)
