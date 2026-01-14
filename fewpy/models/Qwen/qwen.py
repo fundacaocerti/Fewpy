@@ -4,6 +4,9 @@ from fewpy.util.inference.register import register_constructor
 from transformers import AutoModelForImageTextToText, AutoProcessor
 from qwen_vl_utils import process_vision_info
 
+import PIL
+from typing import List, Dict
+
 import supervision as sv
 import torch
 
@@ -20,7 +23,7 @@ class QwenWrapper:
 
         self.prompt = f"Outline the position of objects of classes: {classnames}. Then output all the coordinates and classes of these objects in JSON format."
 
-    def predict(self, x, s_x=None, s_y=None, single_cls: str=None):
+    def predict(self, x: PIL.Image, s_x: List[PIL.Image]=None, s_y: List[Dict]=None, single_cls: str=None):
 
         prompt = self.prompt
         if single_cls is not None:
@@ -86,11 +89,10 @@ class QwenWrapper:
         text = text.replace("```json", "").replace("```", "").strip()
         results = []
         try:
-            C, H, W = x.shape
             datections = sv.Detections.from_vlm(
                 vlm=sv.VLM.QWEN_3_VL,
                 result=output,
-                resolution_wh=[H, W]
+                resolution_wh=x.size
             )
             for bbox, _, conf, label, _, _ in datections:
                 result = {
