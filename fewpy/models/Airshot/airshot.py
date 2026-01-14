@@ -29,46 +29,6 @@ from typing import List
 from fewpy.util.inference.register import register_constructor
 
 
-# class Predictor(DefaultPredictor):
-
-    # @classmethod
-    # def build_train_loader(cls, cfg):
-    #     """
-    #     Returns:
-    #         iterable
-    #     It calls :func:`detectron2.data.build_detection_train_loader` with a customized
-    #     DatasetMapper, which adds categorical labels as a semantic mask.
-    #     """
-    #     mapper = DatasetMapperWithSupport(cfg)
-    #     return build_detection_train_loader(cfg, mapper)
-
-    # @classmethod
-    # def build_test_loader(cls, cfg, dataset_name):
-    #     """
-    #     Returns:
-    #         iterable
-    #     It now calls :func:`detectron2.data.build_detection_test_loader`.
-    #     Overwrite it if you'd like a different data loader.
-    #     """
-    #     return build_detection_test_loader(cfg, dataset_name)
-
-    # @classmethod
-    # def build_optimizer(cls, cfg, model):
-    #     """
-    #     Returns:
-    #         torch.optim.Optimizer:
-    #     It now calls :func:`detectron2.solver.build_optimizer`.
-    #     Overwrite it if you'd like a different optimizer.
-    #     """
-    #     return build_optimizer(cfg, model)
-
-    # @classmethod
-    # def build_evaluator(cls, cfg, dataset_name, output_folder=None):
-    #     if output_folder is None:
-    #         output_folder = Path(cfg.OUTPUT_DIR) / "inference"
-    #     return COCOEvaluator(dataset_name, cfg, True, output_folder)
-
-
 class AirShot(torch.nn.Module):
 
     def __init__(self, cfg, device="cpu"):
@@ -138,9 +98,22 @@ class AirShot(torch.nn.Module):
 
             self.cached = True
 
-            result = self(x)
-            # print("result")
-            return result
+            results = []
+            for item in self(x):
+                instances = item.get("instances")
+                top_instance = instances[instances.scores.argmax()]
+                score = top_instance.score.item()
+                bboxes = top_instance.pred_boxes.tensor.cpu().tolist()
+                labels = top_instance.pred_classes.cpu().tolist()
+                for bbox, label in zip(bboxes, labels):
+                    results.append({
+                        "task": "detection",
+                        "label_id": label,
+                        "conf": score,
+                        "data": bbox        # [xmin, ymin, xmax, ymax] == [xtl, ytl, xbr, ybr]
+                    })
+
+            return results
 
 @register_constructor(name="AirShot", config_cls=AirShotConfig)
 class constructor_AirShot:

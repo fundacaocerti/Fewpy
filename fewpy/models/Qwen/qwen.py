@@ -1,13 +1,10 @@
-from pathlib import Path
-
 from fewpy.models.Qwen.config import QwenConfig
 from fewpy.util.inference.register import register_constructor
 
 from transformers import AutoModelForImageTextToText, AutoProcessor
 from qwen_vl_utils import process_vision_info
 
-
-import json
+import supervision as sv
 import torch
 
 
@@ -44,7 +41,7 @@ class QwenWrapper:
                     "content": [
                         {
                             "type": "text", 
-                            "text": "{\"box_2d\":" + f"{annot["bboxes"]}" + ", \"label\": \"" + f"{cls}" + "\"}"
+                            "text": "{\"bbox_2d\":" + f"{annot["bboxes"]}" + ", \"label\": \"" + f"{cls}" + "\"}"
                         }
                     ]
                 }
@@ -87,13 +84,28 @@ class QwenWrapper:
         text = self.processor.batch_decode(trimmed, skip_special_tokens=True)[0]
 
         text = text.replace("```json", "").replace("```", "").strip()
+        results = []
         try:
-            output = json.loads(text)
-        except:
+            C, H, W = x.shape
+            datections = sv.Detections.from_vlm(
+                vlm=sv.VLM.QWEN_3_VL,
+                result=output,
+                resolution_wh=[H, W]
+            )
+            for bbox, _, conf, label, _, _ in datections:
+                result = {
+                    "task": "detection",
+                    "conf": float(conf),
+                    "data": bbox.tolist(),
+                }
+                if label is not None:
+                    result["label"] = label
+                results.append(result)
+        except Exception as e:
             print("output is not json compatible")
-            output = {"out": text}
+            output = {"out": text, "error": e}
 
-        return output
+        return results
         
 
 @register_constructor(name="Qwen", config_cls=QwenConfig)

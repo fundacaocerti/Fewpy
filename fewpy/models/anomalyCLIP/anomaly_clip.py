@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
+import cv2
 
 from scipy.ndimage import gaussian_filter
 from .base.prompt_ensemble import AnomalyCLIP_PromptLearner
@@ -225,7 +226,8 @@ class AnomalyCLIP(nn.Module):
                 s_x,
                 s_y,
                 user_tknized_prompts,
-                epsilon: float=1e-8):
+                epsilon: float=1e-8, 
+                output_mask: bool=True):
     
         with torch.no_grad():
             prompts, tknized_prompts, compound_prompts_text = self.prompt_learner(cls_id=self.cls_id)
@@ -333,6 +335,29 @@ class AnomalyCLIP(nn.Module):
                 final_map = anomaly_map_device                                                                 # -> [B, H, W]
                         
             final_map_filtered = torch.stack([torch.from_numpy(gaussian_filter(i, sigma=self.config.sigma)) for i in final_map])    # -> [B, H, W]
+
+            if output_mask:
+                B, _, H, W = x.shape
+
+                batched_maps = final_map_filtered.unsqueeze(1)
+                upsampled_map = F.interpolate(
+                    batched_maps,
+                    size=(H, W),
+                    mode="bilinear",
+                    align_corners=False
+                )
+
+                results = []
+                for i in range(B):
+                    mask = upsampled_map[i].squeeze().cpu().detach().numpy()
+                    mask = (mask - mask.min()) / (mask.max() - mask.min() + 1e-8)
+                    mask = cv2.GaussianBlur(mask, (7, 7), 0)
+                    results.append({
+                        "task": "segmentation",
+                        "data": torch.Tensor((mask > 0.5).astype(np.uint8) * 255)
+                    })
+
+                return results
 
             return final_map_filtered
 
