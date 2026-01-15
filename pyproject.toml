@@ -41,6 +41,11 @@ dependencies = [
     "regex>=2025.11.3",
     "scipy>=1.13.1",
     "tdqm>=0.0.1",
+    "dropblock>=0.3.0",
+    "pillow>=11.3.0",
+    "torch>=2.8.0",
+    "torchvision>=0.23.0",
+    "yacs>=0.1.8",
 ]
 
 [dependency-groups]
