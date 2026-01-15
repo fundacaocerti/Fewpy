@@ -174,12 +174,13 @@ class VisionTransformer(nn.Module):
         self.head_dist = None
         if distilled:
             self.head_dist = nn.Linear(self.embed_dim, self.num_classes) if num_classes > 0 else nn.Identity()
-        if pretrained.endswith('.pth'):
-            _load_weights_pth(self, pretrained)
-        elif pretrained.endswith('.npz'):
-            _load_weights_npz(self, pretrained)
-        else:
-            raise ValueError(f'Not recognized file {pretrained}. [.pth|.npz]')
+        if not pretrained == "":
+            if str(pretrained).endswith('.pth'):
+                _load_weights_pth(logger, self, pretrained)
+            elif str(pretrained).endswith('.npz'):
+                _load_weights_npz(self, pretrained)
+            else:
+                raise ValueError(f'Not recognized file {pretrained}. [.pth|.npz]')
 
     def forward_original(self, x):
         # x: [B, C, H, W]
