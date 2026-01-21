@@ -1,29 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Dict, Tuple
 
-args = {
-    "kshot": 1,
-    "dataset": "pascal",
-    "backbone": "VIT-B",
-    "split": 0,
-    "checkpoint": None,
-    "Probs_return": False,
-    "drop_dim": 1,
-    "drop_rate": 0.3,
-    "block_size": 16,
-    "height": 700,
-    "pretrained": "",
-    "SAHI": False,
-    "bg_num": 5,
-    "bsz": 32,
-    "img_size": 700,
-    "training": False,
-    "vit_depth": 10,
-    "vit_stride": 23,
-    "num_prompt": 12 * 6,
-}
-
-
 class FPTRANSConfig(BaseModel):
 
     kshot: int = Field(default=1)
