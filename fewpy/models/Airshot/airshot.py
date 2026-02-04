@@ -14,6 +14,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 from pathlib import Path
+import os
 
 from detectron2.checkpoint import DetectionCheckpointer
 
@@ -51,25 +52,19 @@ class AirShot(torch.nn.Module):
         return self.model(x)
     
     def predict(self, x: List[torch.Tensor], s_x: List[torch.Tensor] | List[str], s_y: List[dict]):
-
         """
         self.model.forward:
         Args:
-            batched_inputs: a list, batched outputs of :class:`DatasetMapper` .
-                Each item in the list contains the inputs for one image.
-                For now, each item in the list is a dict that contains:
-                * image: Tensor, image in (C, H, W) format.
-                * instances (optional): groundtruth :class:`Instances`
-                * proposals (optional): :class:`Instances`, precomputed proposals.
-                Other information that's included in the original dicts, such as:
-                * "height", "width" (int): the output resolution of the model, used in inference.
-                  See :meth:`postprocess` for details.
+            x: a list of Tensors of fomat (C, H, W), the batched query.
+            s_x: a list of Tensors of fomat (C, H, W), the support images.
+            s_y: a list of dictionaries containing the gorund truth for each of the support images.
         Returns:
             list[dict]:
                 Each dict is the output for one input image.
                 The dict contains one key "instances" whose value is a :class:`Instances`.
-                The :class:`Instances` object has the following keys:
-                "pred_boxes", "pred_classes", "scores", "pred_masks", "pred_keypoints"
+                The dict contains the following keys:
+                key "task" that specifies the task the model is trained on (always "detection")
+                key "label_id", contains the id of the detected object
         """
 
         with torch.no_grad():
@@ -105,13 +100,15 @@ class AirShot(torch.nn.Module):
                 score = top_instance.score.item()
                 bboxes = top_instance.pred_boxes.tensor.cpu().tolist()
                 labels = top_instance.pred_classes.cpu().tolist()
+                img_results = []
                 for bbox, label in zip(bboxes, labels):
-                    results.append({
+                    img_results.append({
                         "task": "detection",
                         "label_id": label,
                         "conf": score,
                         "data": bbox        # [xmin, ymin, xmax, ymax] == [xtl, ytl, xbr, ybr]
                     })
+                results.append(img_results)
 
             return results
 
@@ -120,10 +117,18 @@ class constructor_AirShot:
 
     def __init__(self, cfg):
 
-        cfg_path = Path("fewpy").expanduser() / "models" / "Airshot" / "configs" \
-            / "fsod" / "R101" / f"test_R_101_C4_1x_subt3_a.yaml"
-        weights_path = Path("fewpy").expanduser() / "models" / "Airshot" / "weights" \
-            / "checkpoint.pth"
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        weights_path = os.path.join(current_dir, "weights", "checkpoint.pth")
+        if not os.path.exists(weights_path):
+            weights_path = os.path.join("./weights", "checkpoint.pth")
+        if not os.path.exists(weights_path):
+            raise FileNotFoundError("Model weights not found!")
+        
+        cfg_path = os.path.join(current_dir, "configs", "fsod", "R101", "test_R_101_C4_1x_subt3_a.yaml")
+        if not os.path.exists(cfg_path):
+            cfg_path = os.path.join("./configs", "fsod", "R101", "test_R_101_C4_1x_subt3_a.yaml")
+        if not os.path.exists(cfg_path):
+            raise FileNotFoundError("Model config not found!")
 
         DatasetCatalog.register(cfg.DATASETNAME, lambda : [])
         metadata = MetadataCatalog.get(cfg.DATASETNAME)

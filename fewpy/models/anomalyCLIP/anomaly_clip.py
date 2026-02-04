@@ -14,6 +14,8 @@ from scipy.ndimage import gaussian_filter
 from .base.prompt_ensemble import AnomalyCLIP_PromptLearner
 
 from pathlib import Path
+import os
+
 
 def get_similarity_map(sm, shape):
     side = int(sm.shape[1] ** 0.5)
@@ -225,11 +227,30 @@ class AnomalyCLIP(nn.Module):
                 x,
                 s_x,
                 s_y,
-                user_tknized_prompts,
-                epsilon: float=1e-8, 
-                output_mask: bool=True):
-    
+                user_tknized_prompts):
+        """
+        self.model.predict:
+        Args:
+            batched_inputs: a list, batched outputs of :class:`DatasetMapper` .
+                Each item in the list contains the inputs for one image.
+                For now, each item in the list is a dict that contains:
+                * x: Tensor, batch of images in (B, C, H, W) format.
+                * s_x: Tensor, batch of support images in (B, C, H, W) format.
+                * s_y: Tensor, batch of ground truth images in (B, H, W) format.
+                * user_tknized_prompts: list[int], tokenized text. Ideally open_clip.tokenize is
+                used with fewpy.util.inference.preprocessor.Preprocessor so that you only need
+                to pass a list of strings to FewShotModel 
+        Returns:
+                list[dict]:
+                    Each dict is corresponds to the output of a single input image.
+                    The dict contains a string "segmentation" under the key "task" to specify the task type,
+                    a "data" mask, Tensor of format (H, W) and a "postproc_data" mask, Tensor of format (H, W)
+        """
+
         with torch.no_grad():
+
+            epsilon = 1e-8
+
             prompts, tknized_prompts, compound_prompts_text = self.prompt_learner(cls_id=self.cls_id)
             text_features = self.encode_text_learn(
                 prompts,
@@ -336,30 +357,22 @@ class AnomalyCLIP(nn.Module):
                         
             final_map_filtered = torch.stack([torch.from_numpy(gaussian_filter(i, sigma=self.config.sigma)) for i in final_map])    # -> [B, H, W]
 
-            if output_mask:
-                B, _, H, W = x.shape
+            results = []
+            final_map_filtered = final_map_filtered.unsqueeze(1)
+            for map in final_map_filtered:
 
-                batched_maps = final_map_filtered.unsqueeze(1)
-                upsampled_map = F.interpolate(
-                    batched_maps,
-                    size=(H, W),
-                    mode="bilinear",
-                    align_corners=False
-                )
+                mask = map.squeeze().cpu().detach().numpy()
+                mask = (mask - mask.min()) / (mask.max() - mask.min() + 1e-8)
+                mask = cv2.GaussianBlur(mask, (7, 7), 0)
+                mask = torch.from_numpy((mask > 0.5).astype(np.uint8) * 255)
+        
+                results.append({
+                    "task": "segmentation",
+                    "raw_data": map,
+                    "data": mask
+                })
 
-                results = []
-                for i in range(B):
-                    mask = upsampled_map[i].squeeze().cpu().detach().numpy()
-                    mask = (mask - mask.min()) / (mask.max() - mask.min() + 1e-8)
-                    mask = cv2.GaussianBlur(mask, (7, 7), 0)
-                    results.append({
-                        "task": "segmentation",
-                        "data": torch.Tensor((mask > 0.5).astype(np.uint8) * 255)
-                    })
-
-                return results
-
-            return final_map_filtered
+            return results
 
 
 @register_constructor(name="anomalyCLIP", config_cls=AnomalyCLIPConfig)
@@ -377,7 +390,13 @@ class contructor_AnomalyCLIP:
         # if self.config.checkpoint:
         #     state_dict = self.config.checkpoint
         # else:
-        model_path = Path("fewpy").expanduser() / "models" / "anomalyCLIP" / "weights" / f"ViT-L-14-336px.pt"
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        model_path = os.path.join(current_dir, "weights", "ViT-L-14-336px.pt")
+        if not os.path.exists(model_path):
+            model_path = os.path.join("./weights", "ViT-L-14-336px.pt")
+        if not os.path.exists(model_path):
+            raise FileNotFoundError("ViT weights not found!")
+        
         model = torch.jit.load(model_path, map_location=device)
         state_dict = model.state_dict()
 
