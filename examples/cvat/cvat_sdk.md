@@ -9,7 +9,7 @@ When you annotate images with cvat_sdk the annotation step runs in you machine a
 The way cvat_sdk works simplifies a lot your setup, all you need a a CVAT server to connect to and a simple script containing a detect method compatible with what cvat_sdk expects. Fewpy also has fewpy.util.cvat.adapter.CVATAdapter that converts dictionaries of format {"task": task, "data": data} to the correct return values expected by cvat_sdk from your detect method. The cvat_sdk library deals with batching so all your script needs to implement is a setup and a detect method that deals with a single image at a time.
 
 ```python
-mport cvat_sdk.auto_annotation as cvataa
+import cvat_sdk.auto_annotation as cvataa
 import torch
 import numpy as np
 import sys
