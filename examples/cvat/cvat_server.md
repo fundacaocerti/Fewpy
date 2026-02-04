@@ -17,15 +17,15 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml -f components/ser
 In order to deploy your models as a nuclio serverless function there are two scripts inside the CVAT folder, ./cvat/serversless/deploy_cpu.sh and ./cvat/serversless/deploy_gpu.sh.
 
 The shell command bellow runs the script that will look for a function.yaml and a main.py files inside /cvat/fewpy_test/ and deploy your serverless function
-´´´shell
+```shell
 cvat$ ./serverless/deploy_cpu.sh ./fewpy_test/
-´´´
+```
 
 ### function.yaml
 
 Your function.yaml file will be used by the deployment shell script to produce a dockerfile. In the case of this example we use the following function.yaml:
 
-´´´yaml
+```yaml
 metadata:
   name: Fewpy-CVAT
   namespace: cvat
@@ -110,13 +110,13 @@ spec:
         name: always
         maximumRetryCount: 3
       mountMode: volume
-´´´
+```
 
 ### main.py
 
 The main.py file will define two functions, init_context and handler. In our init_context function we load the model and support_set and save them on context.user_data. The handler function will be called by CVAT in order to annotate an image.
 
-´´´python
+```python
 import json
 import torch
 from fewpy.util.inference.FewShotModel import FewShotModel
@@ -259,7 +259,7 @@ def handler(context, event):
     context.logger.info("\n---------Got output from model!---------\n")
 
     return context.Response(body=json.dumps(results), content_type='application/json', status_code=200)
-´´´
+```
 
 Notice that in this example, since we work with a segementation model, which implies one output per image the result variable holds a list of dictionaries. But in the case of object detection, where a single image could result in several bounding boxes each of these detections should be encapsulated in one dictionary. Therefore your output should be a nested list of dicctionaries (list[list[dict]]).
 
@@ -274,26 +274,26 @@ It is important to point out that if you deploy many nuclio functions and there 
 If for some reason the thread building your function was stopped. Then their status will be stuck at 'building'. In that case, this function will cause trouble for future deployments. Functions stuck with the 'building' status cannot be removed with 'nuctl delete function'. They have to be deleted directly from the cache directory. That directory runs separately. So in order to remove your function do:
 
 List the nuclio processes
-´´śhell
+```shell
 docker ps -a | grep nuclio
-´´´
+```
 
 Access that process
-´´śhell
+```shell
 docker exec -it <id> /bin/sh
-´´´
+```
 
 Find the cache directory and delete the function .json
-´´śhell
+```shell
 cd etc/nuclio/store/functions/nuclio/
 rm -rf <your function name>.json
 exit
-´´´
+```
 
 Finally, restard the dashboard processes
-´´śhell
+```shell
 docker restart <dashboard id>
-´´´
+```
 
 ### Read the CVAT/nuclio documentation
 
