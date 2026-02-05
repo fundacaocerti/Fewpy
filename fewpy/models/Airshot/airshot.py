@@ -15,6 +15,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from pathlib import Path
 import os
+import sys
 
 from detectron2.checkpoint import DetectionCheckpointer
 
@@ -120,7 +121,8 @@ class constructor_AirShot:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         weights_path = os.path.join(current_dir, "weights", "checkpoint.pth")
         if not os.path.exists(weights_path):
-            weights_path = os.path.join("./weights", "checkpoint.pth")
+            main_dir = sys.path[0]
+            weights_path = os.path.join(main_dir, "weights", "checkpoint.pth")
         if not os.path.exists(weights_path):
             raise FileNotFoundError("Model weights not found!")
         

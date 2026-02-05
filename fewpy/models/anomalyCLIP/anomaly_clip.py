@@ -13,7 +13,7 @@ import cv2
 from scipy.ndimage import gaussian_filter
 from .base.prompt_ensemble import AnomalyCLIP_PromptLearner
 
-from pathlib import Path
+import sys
 import os
 
 
@@ -393,7 +393,8 @@ class contructor_AnomalyCLIP:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         model_path = os.path.join(current_dir, "weights", "ViT-L-14-336px.pt")
         if not os.path.exists(model_path):
-            model_path = os.path.join("./weights", "ViT-L-14-336px.pt")
+            main_dir = sys.path[0]
+            model_path = os.path.join(main_dir, "weights", "ViT-L-14-336px.pt")
         if not os.path.exists(model_path):
             raise FileNotFoundError("ViT weights not found!")
         
