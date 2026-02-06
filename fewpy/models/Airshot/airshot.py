@@ -95,14 +95,14 @@ class AirShot(torch.nn.Module):
             self.cached = True
 
             results = []
-            for item in self(x):
+            instance_list = self(x)
+            for item in instance_list[0]:
                 instances = item.get("instances")
-                top_instance = instances[instances.scores.argmax()]
-                score = top_instance.score.item()
-                bboxes = top_instance.pred_boxes.tensor.cpu().tolist()
-                labels = top_instance.pred_classes.cpu().tolist()
+                scores = instances.scores.cpu().tolist()
+                bboxes = instances.pred_boxes.tensor.cpu().tolist()
+                labels = instances.pred_classes.cpu().tolist()
                 img_results = []
-                for bbox, label in zip(bboxes, labels):
+                for bbox, label, score in zip(bboxes, labels, scores):
                     img_results.append({
                         "task": "detection",
                         "label_id": label,

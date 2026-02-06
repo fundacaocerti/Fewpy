@@ -234,16 +234,16 @@ class FsodRes5ROIHeads(ROIHeads):
         
         proposal_deltas = torch.cat(full_bboxes_ls, dim=0)
         pred_cls = torch.cat(full_cls_ls, dim=0) #.unsqueeze(-1) 
-        print("pred clas", pred_cls)
+        # print("pred clas", pred_cls)
        
         predictions = class_logits, proposal_deltas
         proposals = full_proposals_ls
         # # 每个图像中instance的得分    
         pred_instances, _ = self.box_predictor.inference(pred_cls, predictions, proposals)
-        print("pred_instances 1st", pred_instances)
+        # print("pred_instances 1st", pred_instances)
         
         pred_instances = self.forward_with_given_boxes(features, pred_instances)
-        print("pred_instances 2nd", pred_instances)
+        # print("pred_instances 2nd", pred_instances)
     
         return pred_instances, {}       
     
