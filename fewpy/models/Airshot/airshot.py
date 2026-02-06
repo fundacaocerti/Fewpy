@@ -128,7 +128,8 @@ class constructor_AirShot:
         
         cfg_path = os.path.join(current_dir, "configs", "fsod", "R101", "test_R_101_C4_1x_subt3_a.yaml")
         if not os.path.exists(cfg_path):
-            cfg_path = os.path.join("./configs", "fsod", "R101", "test_R_101_C4_1x_subt3_a.yaml")
+            main_dir = sys.path[0]
+            cfg_path = os.path.join(main_dir, "configs", "fsod", "R101", "test_R_101_C4_1x_subt3_a.yaml")
         if not os.path.exists(cfg_path):
             raise FileNotFoundError("Model config not found!")
 
