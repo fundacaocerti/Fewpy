@@ -13,8 +13,9 @@ import cv2
 from scipy.ndimage import gaussian_filter
 from .base.prompt_ensemble import AnomalyCLIP_PromptLearner
 
+from pathlib import Path
+
 import sys
-import os
 
 
 def get_similarity_map(sm, shape):
@@ -387,16 +388,18 @@ class contructor_AnomalyCLIP:
     def instantiate_model(self):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # if self.config.checkpoint:
-        #     state_dict = self.config.checkpoint
-        # else:
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        model_path = os.path.join(current_dir, "weights", "ViT-L-14-336px.pt")
-        if not os.path.exists(model_path):
-            main_dir = sys.path[0]
-            model_path = os.path.join(main_dir, "weights", "ViT-L-14-336px.pt")
-        if not os.path.exists(model_path):
+        current_dir = Path(__file__).resolve().parent
+        model_path = current_dir / "weights" / "ViT-L-14-336px.pt"
+        if not model_path.exists():
+            main_dir = Path(sys.path[0])
+            model_path = main_dir / "weights" / "ViT-L-14-336px.pt"
+        if not model_path.exists():
             raise FileNotFoundError("ViT weights not found!")
+        
+        checkpoint_path = model_path.parent / "anomaly_clip.pth"
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"Checkpoint not found at {str(checkpoint_path)}!")
+        
         
         model = torch.jit.load(model_path, map_location=device)
         state_dict = model.state_dict()
@@ -451,6 +454,8 @@ class contructor_AnomalyCLIP:
 
         model.load_state_dict(state_dict)
         model.prompt_learner = AnomalyCLIP_PromptLearner(model.to("cpu"), dsgn_details)
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        model.prompt_learner.load_state_dict(checkpoint["prompt_learner"])
         model.prompt_learner.to(device)
 
         model.to(device)

@@ -2,7 +2,6 @@ import pkgutil
 import importlib
 import os
 
-print("--- Starting Model Registration ---")
 pkg_path = os.path.dirname(__file__)
 pkg_name = __name__
 
@@ -16,5 +15,3 @@ for loader, module_name, is_pkg in pkgutil.walk_packages([pkg_path], pkg_name + 
         except Exception as e:
             # We PRINT the error so it shows up in your docker logs/terminal
             print(f"CRITICAL: Failed to import {module_name}. Error: {e}")
-
-print("--- Registration Finished ---")

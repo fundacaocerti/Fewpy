@@ -27,11 +27,7 @@ class AnomalyCLIPConfig(BaseModel):
         description="Take control of sharpness between anomaly patches."
         "Larger values tend to give less self.config.contrast between anomalies"
     )
-
-    # user_prompts: list[str] | None = Field(
-    #     None,
-    #     description="List of prompts to guide detection"
-    # )
+    
     softmax_temp: float = Field(
         0.07, 
         description="Softmax temperature for user text prompt attention. " \
@@ -40,5 +36,3 @@ class AnomalyCLIPConfig(BaseModel):
     seed: int = Field(default=111)
     sigma: int = Field(default=4)
     cls_id: int | None = Field(default=None)
-
-    checkpoint: Dict | None = Field(default=None)

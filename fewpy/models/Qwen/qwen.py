@@ -7,6 +7,8 @@ from qwen_vl_utils import process_vision_info
 import PIL
 from typing import List, Dict
 
+from copy import deepcopy
+
 import supervision as sv
 import torch
 
@@ -23,7 +25,7 @@ class QwenWrapper:
 
         self.prompt = f"Outline the position of objects of classes: {classnames}. Then output all the coordinates and classes of these objects in JSON format."
 
-    def predict(self, x: PIL.Image, s_x: List[PIL.Image]=None, s_y: List[Dict]=None, single_cls: str=None):
+    def predict(self, x: List[PIL.Image], s_x: List[PIL.Image]=None, s_y: List[Dict]=None, single_cls: str=None):
 
         prompt = self.prompt
         if single_cls is not None:
@@ -52,60 +54,64 @@ class QwenWrapper:
                 messages.append(usr_msg)
                 messages.append(target_msg)
 
-        task_msg = {
+        results = []
+        for xi in x:
+            task_msg = {
             "role": "user",
             "content": [
-                {"type": "image", "image": x},
+                {"type": "image", "image": xi},
                 {"type": "text", "text": prompt}
             ],
         }
-        messages.append(task_msg)
 
-        image_inputs, video_inputs = process_vision_info(messages)
+            msgs = deepcopy(messages)
+            msgs.append(task_msg)
 
-        text = self.processor.apply_chat_template(
-            messages, 
-            tokenize=False, 
-            add_generation_prompt=True
-        )
+            image_inputs, video_inputs = process_vision_info(msgs)
 
-        inputs = self.processor(
-            text=[text],
-            images=image_inputs,
-            videos=video_inputs,
-            padding=True,
-            return_tensors="pt",
-        ).to("cuda")
-
-        with torch.inference_mode():
-            gen = self.model.generate(
-                **inputs,
-                max_new_tokens=256,
-        )
-
-        trimmed = [g[len(i):] for i, g in zip(inputs.input_ids, gen)]
-        text = self.processor.batch_decode(trimmed, skip_special_tokens=True)[0]
-
-        text = text.replace("```json", "").replace("```", "").strip()
-        results = []
-        try:
-            datections = sv.Detections.from_vlm(
-                vlm=sv.VLM.QWEN_3_VL,
-                result=output,
-                resolution_wh=x.size
+            text = self.processor.apply_chat_template(
+                msgs, 
+                tokenize=False, 
+                add_generation_prompt=True
             )
-            for bbox, _, conf, label, _, _ in datections:
-                result = {
-                    "task": "detection",
-                    "conf": float(conf),
-                    "data": bbox.tolist(),
-                }
-                if label is not None:
-                    result["label"] = label
-                results.append(result)
-        except Exception as e:
-            print("output is not json compatible")
-            output = {"out": text, "error": e}
+
+            inputs = self.processor(
+                text=[text],
+                images=image_inputs,
+                videos=video_inputs,
+                padding=True,
+                return_tensors="pt",
+            ).to("cuda")
+
+            with torch.inference_mode():
+                gen = self.model.generate(
+                    **inputs,
+                    max_new_tokens=256,
+            )
+
+            trimmed = [g[len(i):] for i, g in zip(inputs.input_ids, gen)]
+            text = self.processor.batch_decode(trimmed, skip_special_tokens=True)[0]
+            image_results = []
+            text = text.replace("```json", "").replace("```", "").strip()
+            try:
+                datections = sv.Detections.from_vlm(
+                    vlm=sv.VLM.QWEN_3_VL,
+                    result=output,
+                    resolution_wh=x.size
+                )
+                for bbox, _, conf, label, _, _ in datections:
+                    result = {
+                        "task": "detection",
+                        "conf": float(conf),
+                        "data": bbox.tolist(),
+                    }
+                    if label is not None:
+                        result["label"] = label
+                    image_results.append(result)
+                results.append(image_results)
+            except Exception as e:
+                print("output is not json compatible")
+                output = {"out": text, "error": e}
 
         return results
         

@@ -88,7 +88,7 @@ checkpoint: Dict | None, Checkpoint dictionary with model state, default=None
 """
 args = {
     "image_size": IMG_SIZE,
-    "n_ctx": 4,
+    "n_ctx": 12,
     "t_n_ctx": 4,
 }
 

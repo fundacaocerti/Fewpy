@@ -46,10 +46,8 @@ for i in indices:
     width = int(size.find("width").text)
     height = int(size.find("height").text)
 
-    # print("looking at file", image)
     for obj in root.findall("object"):
         name = obj.find("name").text
-        # print("object", name)
         if name not in CLASSES:
             continue
 
@@ -67,7 +65,6 @@ for i in indices:
 
         if first: 
             first = False
-            # s_yi["cls"] = mapper[name]
             s_yi["cls"] = name
             s_yi["bboxes"] = bbox
             cls = name
@@ -76,22 +73,15 @@ for i in indices:
         torch.stack([s_yi["bboxes"], bbox], dim=0)
 
     if counter[cls] < K:
-        # print("bboxes shape", s_yi["bboxes"].shape)
-        # print("bboxes", s_yi["bboxes"])
         support_ground_truth.append(s_yi)
         support_images.append(Image.fromarray(utils.read_image(image, format='BGR')))
 
         counter[cls] += 1
-        # print("added support image of class", cls)
-        # print("File", annotation)
     elif cls == QUERY_CLASS and query_images is None:
         query_images = [Image.fromarray(utils.read_image(image, format='BGR'))]
         s_yi["height"] = height
         s_yi["width"] = width
         query_targets = [s_yi]
-
-        # print("added query file")
-        # print("File", annotation)
 
 
 ds = FSLDataset(
@@ -110,21 +100,43 @@ dl = DataLoader(
     collate_fn=fsl_collate      # Fewpy collate function
 )
 
+"""
+datasetname: str, name of the inference dataset
+classnames: list[str], name of each class in the dataset
+
+mapping_to_contiguous_ids: dict[int], id mapper in case dataset does not have contiguous ids
+
+confidence_threshold: float, lower bound of confidence for accepted proposals
+"""
+
 args = {
-    "DATASETNAME": 'JJ',
-    "CLASSNAMES": ["bottle", "sofa"],
+    "datasetname": 'voc_bottle_n_sofa',
+    "classnames": ["bottle", "sofa"],
     "confidence_threshold": 0.5,
     "mapping_to_contiguous_ids": {"bottle": 0, "sofa": 1}
 }
 
-
-print("fewshot config1", args)
 # config = AnomalyCLIPConfig(**args)
 model = FewShotModel(
     model="AirShot",
     config=args
 )
 
+"""
+        self.model.forward:
+        Args:
+            x: a list of Tensors of fomat (C, H, W), the batched query.
+            s_x: a list of Tensors of fomat (C, H, W), the support images, or a list of paths to the images (str).
+            s_y: a list of dictionaries containing the gorund truth for each of the support images.
+        Returns:
+            list[list[dict]]:
+                Each list[dict] is a list of detections from a single image
+                Each dict is the output of one detection from a single image.
+                The dict contains one key "instances" whose value is a :class:`Instances`.
+                The dict contains the following keys:
+                key "task" that specifies the task the model is trained on (always "detection")
+                key "label_id", contains the id of the detected object
+        """
 results = []
 for batch, s_x, s_y in dl:
     print("batch shape:", batch.shape)

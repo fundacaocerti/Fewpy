@@ -4,10 +4,9 @@ from typing import List
 
 class AirShotConfig(BaseModel):
 
-    DATASETNAME: str = Field(default="TEST", description="Name of the inference dataset")
-    CLASSNAMES: List[str] = Field(
-        default_factory=lambda: ["classone", "classtwo"],
-        description="id (int) of each class in the dataset"
+    datasetname: str = Field(default="TEST", description="Name of the inference dataset")
+    classnames: List[str] = Field(
+        description="name (str) of each class in the dataset"
     ) 
 
     mapping_to_contiguous_ids: dict = Field(

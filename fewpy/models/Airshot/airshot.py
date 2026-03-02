@@ -12,10 +12,9 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
+import sys
 
 from pathlib import Path
-import os
-import sys
 
 from detectron2.checkpoint import DetectionCheckpointer
 
@@ -57,11 +56,12 @@ class AirShot(torch.nn.Module):
         self.model.forward:
         Args:
             x: a list of Tensors of fomat (C, H, W), the batched query.
-            s_x: a list of Tensors of fomat (C, H, W), the support images.
+            s_x: a list of Tensors of fomat (C, H, W), the support images, or a list of paths to the images (str).
             s_y: a list of dictionaries containing the gorund truth for each of the support images.
         Returns:
-            list[dict]:
-                Each dict is the output for one input image.
+            list[list[dict]]:
+                Each list[dict] is a list of detections from a single image
+                Each dict is the output of one detection from a single image.
                 The dict contains one key "instances" whose value is a :class:`Instances`.
                 The dict contains the following keys:
                 key "task" that specifies the task the model is trained on (always "detection")
@@ -117,25 +117,25 @@ class AirShot(torch.nn.Module):
 class constructor_AirShot:
 
     def __init__(self, cfg):
-
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        weights_path = os.path.join(current_dir, "weights", "checkpoint.pth")
-        if not os.path.exists(weights_path):
-            main_dir = sys.path[0]
-            weights_path = os.path.join(main_dir, "weights", "checkpoint.pth")
-        if not os.path.exists(weights_path):
+        
+        current_dir = Path(__file__).resolve().parent
+        model_path = current_dir / "weights" / "airshot.pth"
+        if not model_path.exists():
+            main_dir = Path(sys.path[0])
+            model_path = main_dir / "weights" / "airshot.pth"
+        if not model_path.exists():
             raise FileNotFoundError("Model weights not found!")
         
-        cfg_path = os.path.join(current_dir, "configs", "fsod", "R101", "test_R_101_C4_1x_subt3_a.yaml")
-        if not os.path.exists(cfg_path):
-            main_dir = sys.path[0]
-            cfg_path = os.path.join(main_dir, "configs", "fsod", "R101", "test_R_101_C4_1x_subt3_a.yaml")
-        if not os.path.exists(cfg_path):
+        cfg_path = current_dir / "configs" / "fsod" / "R101" / "test_R_101_C4_1x_subt3_a.yaml"
+        if not cfg_path.exists():
+            main_dir = Path(sys.path[0])
+            cfg_path = main_dir / "configs" / "fsod" / "R101" / "test_R_101_C4_1x_subt3_a.yaml"
+        if not cfg_path.exists():
             raise FileNotFoundError("Model config not found!")
 
-        DatasetCatalog.register(cfg.DATASETNAME, lambda : [])
-        metadata = MetadataCatalog.get(cfg.DATASETNAME)
-        metadata.set(thing_classes=cfg.CLASSNAMES)
+        DatasetCatalog.register(cfg.datasetname, lambda : [])
+        metadata = MetadataCatalog.get(cfg.datasetname)
+        metadata.set(thing_classes=cfg.classnames)
         metadata.set(thing_dataset_id_to_contiguous_id = cfg.mapping_to_contiguous_ids)
 
         # print("cfg", cfg)
@@ -143,7 +143,7 @@ class constructor_AirShot:
         self.cfg = get_cfg()
         self.cfg.merge_from_file(cfg_path)
         self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = cfg.confidence_threshold
-        self.cfg.DATASETS.TEST = [cfg.DATASETNAME]
+        self.cfg.DATASETS.TEST = [cfg.datasetname]
         self.cfg.MODEL.WEIGHTS = str(weights_path)
         self.cfg.freeze()
         

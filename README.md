@@ -38,3 +38,7 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+This model is an implementation of the efficiency improvements proposed by [AirShot: Efficient Few-Shot Detection for Autonomous Exploration](https://arxiv.org/abs/2404.05069) (Wang et al., 2024). It consists in an FSOD RCNN built with detectron2. Thus it is a few-shot detection model.
+
+For more detailed information on expected input or configuration refer to [./examples/models/airshot.md]()

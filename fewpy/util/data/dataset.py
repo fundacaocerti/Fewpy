@@ -38,8 +38,6 @@ class FSLDataset(Dataset):
         self.support_set_preproc = False
         self.norm_annot = norm_annot
 
-        print(f"types: x={type(x[0])}, s_x={type(s_x[0])}, s_y={type(s_y[0])}")
-
     def __len__(self) -> int:
         return len(self.data)
     
