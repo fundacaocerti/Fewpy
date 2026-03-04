@@ -1,6 +1,6 @@
 # Running AnomalyCLIP with fewpy
 
-In order to run the AirShot implementation within fewpy you will need:
+In order to run the AnomalyCLIP implementation within fewpy you will need:
     - to import fewpy's FewShotModel class
     - a checkpoint (weight) file for the model named "anomalyClip.pth"
     - ViT-L-14-336px weights
@@ -78,7 +78,7 @@ model.predict(
         x=batch,
         s_x=s_x,
         s_y=s_y,
-        user_prompts=["crack", "fissure"]
+        user_prompts=["crack"]
 )
 ```
 
@@ -86,4 +86,4 @@ model.predict(
 
 In fewpy every model has standardized output dictionary. Every model outputs a dictionary containing a "task" value and a "data" value. Those are the specific task the model is designed for and the prediction data. In addition AnomalyCLIP's output also contains the raw predictions (no postprocessing) as the value for "raw_data".
 
-As previouly mentioned you may or may not use fewpy's dataset class and collate function. A full example of AirShot inference using fewpy is availble in [Fewpy/examples/models/anomalyclip.py]().
+As previouly mentioned you may or may not use fewpy's dataset class and collate function. A full example of AnomalyCLIP inference using fewpy is availble in [Fewpy/examples/models/anomalyclip.py]().

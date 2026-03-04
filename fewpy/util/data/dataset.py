@@ -14,7 +14,8 @@ class FSLDataset(Dataset):
                  img_size: tuple[int]=None,
                  max_size: int=None,
                  pixel_norm: tuple=None,
-                 norm_annot: bool=False) -> None:
+                 norm_annot: bool=False,
+                 transform_datapoints: bool=True) -> None:
         super().__init__()
 
         # set transform composition that turns pillow image objects into datapoints compatible with the library
@@ -37,13 +38,17 @@ class FSLDataset(Dataset):
         self.s_y = s_y
         self.support_set_preproc = False
         self.norm_annot = norm_annot
+        self.transform_datapoints = transform_datapoints
 
     def __len__(self) -> int:
         return len(self.data)
     
     def __getitem__(self, index: int):
 
-        xi = self.transf(self.data[index])
+        xi = self.data[index]
+        if self.transform_datapoints:
+            xi = self.transf(xi)
+
         if not self.support_set:
             return xi
         
@@ -100,3 +105,7 @@ def fsl_collate(batch):
     s_y = s_y[0]
 
     return batch, s_x, s_y
+
+def qwen_collate(batch):
+    
+    return batch

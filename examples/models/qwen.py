@@ -1,6 +1,6 @@
 from fewpy.util.inference.FewShotModel import FewShotModel
-from fewpy.util.data.dataset import FSLDataset, fsl_collate
-from torch.utils.data import DataLoader, Dataset
+from fewpy.util.data.dataset import FSLDataset, qwen_collate
+from torch.utils.data import DataLoader
 
 from pathlib import Path
 import xml.etree.ElementTree as ET
@@ -10,9 +10,10 @@ import torch
 from PIL import Image
 import numpy as np
 
+
 # prepare support and query data 
 K = 5
-n = 4
+n = 1
 CLASSES = ("bottle", "sofa")
 
 dataset = Path("./testdata2").expanduser()
@@ -22,8 +23,6 @@ images = dataset / "selected_img"
 counter = {cls: 0 for cls in CLASSES}
 
 annotations = list(annotations.glob("*.xml"))
-# print("retrieving", len(annotations), "annotations")
-# print()
 
 indices = np.random.permutation(len(annotations))
 query_targets = []
@@ -73,46 +72,48 @@ for i in indices:
 
     if counter[cls] < K:
         support_ground_truth.append(s_yi)
-        support_images.append(Image.open(image).format("RGB"))
+        support_images.append(Image.open(image).convert("RGB"))
 
         counter[cls] += 1
     elif len(query_images) < n:
-        query_images += [Image.open(image).format("RGB")]
+        query_images += [Image.open(image).convert("RGB")]
         s_yi["height"] = height
         s_yi["width"] = width
         query_targets = [s_yi]
     
-    if all(ki >= k for ki in counter.values()) and \
+    if all(ki >= K for ki in counter.values()) and \
         len(query_images) >= n:
         break
+
+ds = FSLDataset(query_images, transform_datapoints=False)
+dl = DataLoader(
+    ds,
+    batch_size=1,
+    shuffle=True,
+    collate_fn=qwen_collate,
+)
 
 args = {
     "classnames": ["bottle", "sofa"],
 }
 
-# config = AnomalyCLIPConfig(**args)
 model = FewShotModel(
     model="Qwen",
     config=args
 )
 
-ds = Dataset(query_images)
-dl = DataLoader(
-    ds,
-    batch_size=2,
-    shuffle=True,
-)
-
 results = []
 for batch in dl:
+
     results += model.predict(
         x=batch,
         s_x=support_images,
         s_y=support_ground_truth,
     )
 
-for batched_results in results:
-    for i, image_results in enumerate(batched_results):
-        print(f"Image {i+1} detections:")
-        for detection in image_results:
-            print(f"confidence: {detection["conf"]}\nbbox: {detection["data"]}")
+print(results)
+
+for i, image_results in enumerate(results):
+    print(f"Image {i+1} detections:")
+    for detection in image_results:
+        print(f"confidence: {detection["conf"]}\nbbox: {detection["data"]}")

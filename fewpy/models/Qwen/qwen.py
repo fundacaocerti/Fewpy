@@ -57,12 +57,12 @@ class QwenWrapper:
         results = []
         for xi in x:
             task_msg = {
-            "role": "user",
-            "content": [
-                {"type": "image", "image": xi},
-                {"type": "text", "text": prompt}
-            ],
-        }
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": xi},
+                    {"type": "text", "text": prompt}
+                ],
+            }
 
             msgs = deepcopy(messages)
             msgs.append(task_msg)
@@ -96,8 +96,8 @@ class QwenWrapper:
             try:
                 datections = sv.Detections.from_vlm(
                     vlm=sv.VLM.QWEN_3_VL,
-                    result=output,
-                    resolution_wh=x.size
+                    result=text,
+                    resolution_wh=xi.size
                 )
                 for bbox, _, conf, label, _, _ in datections:
                     result = {
@@ -110,8 +110,7 @@ class QwenWrapper:
                     image_results.append(result)
                 results.append(image_results)
             except Exception as e:
-                print("output is not json compatible")
-                output = {"out": text, "error": e}
+                print("Output is not json compatible!", e)
 
         return results
         

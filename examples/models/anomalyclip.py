@@ -13,7 +13,6 @@ from pathlib import Path
 
 
 # The following example uses the KolektorSDD dataset
-
 MAX_SUBSETS = 2     # each subset contains 8 examples, therefore k = 16 for MAX_SUBSETS =  2
 IMG_SIZE = 448
 
