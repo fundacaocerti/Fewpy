@@ -1,6 +1,5 @@
 from torch import Tensor
 from inspect import signature, Parameter
-from pydantic import BaseModel
 
 from fewpy.util.inference.preprocessor import Preprocessor
 from fewpy.util.inference.register import REGISTRY, CONFIG, CONSTRUCTOR

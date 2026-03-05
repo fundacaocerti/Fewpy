@@ -1,5 +1,5 @@
 from fewpy.util.inference.FewShotModel import FewShotModel
-from fewpy.util.data.dataset import FSLDataset, qwen_collate
+from fewpy.util.data.dataset import FSLDataset
 from torch.utils.data import DataLoader
 
 from pathlib import Path
@@ -10,6 +10,9 @@ import torch
 from PIL import Image
 import numpy as np
 
+
+def qwen_collate(batch):
+    return batch
 
 # prepare support and query data 
 K = 5
@@ -102,9 +105,21 @@ model = FewShotModel(
     config=args
 )
 
+"""
+        self.model.forward:
+        Args:
+            x: a list of Image objects, the batched query.
+            s_x: a list of Image objects, the support images.
+            s_y: a list of dictionaries containing the gorund truth for each of the support images.
+        Returns:
+            list[list[dict]]:
+                Each list[dict] is a list of detections from a single image
+                Each dict is the output of one detection from a single image.
+                The dict contains the following keys:
+                key "task" that specifies the task the model is trained on (always "detection")
+"""
 results = []
 for batch in dl:
-
     results += model.predict(
         x=batch,
         s_x=support_images,

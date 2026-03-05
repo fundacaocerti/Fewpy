@@ -132,11 +132,10 @@ model = FewShotModel(
             list[list[dict]]:
                 Each list[dict] is a list of detections from a single image
                 Each dict is the output of one detection from a single image.
-                The dict contains one key "instances" whose value is a :class:`Instances`.
                 The dict contains the following keys:
                 key "task" that specifies the task the model is trained on (always "detection")
                 key "label_id", contains the id of the detected object
-        """
+"""
 results = []
 for batch, s_x, s_y in dl:
     print("batch shape:", batch.shape)

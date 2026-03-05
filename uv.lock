@@ -381,12 +381,26 @@ wheels = [
 ]
 
 [[package]]
+name = "dropblock"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f4/68/ccac0d2166ba6703bfcb4e1a19bb38f76cc677c70ccc85f1914167397f8b/dropblock-0.3.0.tar.gz", hash = "sha256:bdb016f36628ae69f0a4860614c84beb45873e5144a680485092485992a52617", size = 4111, upload-time = "2018-12-17T11:45:58.168Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/92/ba/a2c6388f228045fa543f263923804e799b2e9d86b0517c5a53564ae0de3e/dropblock-0.3.0-py3-none-any.whl", hash = "sha256:98ce0a7c50f55ee31059e41b6d38cc6fd324eced729ac680265b00aafb1df0bf", size = 5373, upload-time = "2018-12-17T11:45:56.43Z" },
+]
+
+[[package]]
 name = "fewpy"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "accelerate" },
     { name = "detectron2" },
+    { name = "dropblock" },
     { name = "ftfy" },
     { name = "numpy" },
     { name = "open-clip-torch" },
@@ -420,6 +434,7 @@ poe = [
 requires-dist = [
     { name = "accelerate", specifier = ">=1.12.0" },
     { name = "detectron2", git = "https://github.com/facebookresearch/detectron2.git" },
+    { name = "dropblock", specifier = ">=0.3.0" },
     { name = "ftfy", specifier = ">=6.3.1" },
     { name = "numpy", specifier = "==2.3.4" },
     { name = "open-clip-torch", specifier = ">=3.2.0" },

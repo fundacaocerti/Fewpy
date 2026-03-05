@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from dropblock import DropBlock2D
+import sys
 
 from .base.vit import vit_model, vit_factory
 from pathlib import Path
@@ -378,16 +379,16 @@ class FPTRANS(nn.Module):
                 params.append(var)
         return [{'params': params}]
 
-    def predict(self, batch):
+    def predict(self, x: torch.Tensor, s_x: torch.Tensor, s_y: torch.Tensor):
         
         if self.args.SAHI:
             
-            line, column = batch['query_img'].size()[1:3]
+            line, column = x.size()[1:3]
             pred_mask_batch = torch.zeros(self.args.bsz, line, column, 2, self.args.img_size, self.args.img_size)
 
             for i in range(line):
                 for j in range(column):
-                    pred_mask_batch[:,i,j,:,:,:]  = self(batch['query_img'][:,i,j,:,:,:], batch['support_imgs'],batch['support_masks'])
+                    pred_mask_batch[:,i,j,:,:,:]  = self(x[:,i,j,:,:,:], s_y, s_y)
 
             list_column = [pred_mask_batch[:, :, i, :, :, :] for i in range(column)]
             cat_list = list(map(lambda x: x.squeeze(2), list_column))
@@ -401,7 +402,16 @@ class FPTRANS(nn.Module):
 
             return novo_tensor
 
-        return self(batch['query_img'], batch['support_imgs'],batch['support_masks'])
+        output = self(x, s_x, s_y)
+        results = []
+
+        for segmentation in output:
+            results.append({
+                "task": "segmentation",
+                "data": segmentation,
+            })
+
+        return results
 
 
 @register_constructor(name="FPTRANS", config_cls=FPTRANSConfig)
@@ -409,13 +419,6 @@ class constructor_FPTRANS():
     def __init__(self, args):
             
         self.args = args
-
-    def construct_yaml(self):
-
-        path_yaml = Path("./weights") / f"{self.args.data_set}" \
-            / f"{self.args.data_set}_{self.args.backbone}_fold{self.args.split}_{self.args.kshot}shot.yaml"
-
-        return path_yaml
 
     def instantiate_model(self):
 
@@ -430,9 +433,18 @@ class constructor_FPTRANS():
         if not self.args.checkpoint is None:
             state_dict = self.args.checkpoint
         else:
-            weight_path = Path("./weights").expanduser() / f"{self.args.data_set}" \
-                / f"{self.args.data_set}_{self.args.backbone}_fold{self.args.split}_{self.args.kshot}shot.pth"
-            weights = torch.load(weight_path, map_location=device)
+            current_dir = Path(__file__).resolve().parent
+            model_path = current_dir / "weights" / f"fptrans.pth"
+            if not model_path.exists():
+                main_dir = Path(sys.path[0])
+                model_path = main_dir / "weights" / f"fptrans.pth"
+            if not model_path.exists():
+                raise FileNotFoundError(f"Weights not found at {model_path}")
+        
+            weights = torch.load(
+                model_path,
+                map_location=device,
+                weights_only=False)
 
             if "model_state" in weights:
                 state_dict = weights["model_state"]

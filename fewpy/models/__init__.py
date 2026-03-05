@@ -7,7 +7,6 @@ pkg_name = __name__
 
 # walk_packages is more robust for nested directories than iter_modules
 for loader, module_name, is_pkg in pkgutil.walk_packages([pkg_path], pkg_name + "."):
-    # print(module_name)
     if not is_pkg:
         try:
             importlib.import_module(module_name)
