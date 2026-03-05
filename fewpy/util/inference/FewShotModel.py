@@ -2,14 +2,15 @@ from torch import Tensor
 from inspect import signature, Parameter
 from pydantic import BaseModel
 
-from .preprocessor import Preprocessor
-from .register import REGISTRY, CONFIG, CONSTRUCTOR
+from fewpy.util.inference.preprocessor import Preprocessor
+from fewpy.util.inference.register import REGISTRY, CONFIG, CONSTRUCTOR
+import fewpy.models
 
 
 class FewShotModel:
 
     def __init__(self, model: str, config: dict=None, preprocessors: list[Preprocessor]=[]) -> None:
-        
+
         self.model, self.device = self.__load_model(model, config)
         params = signature(self.model.predict).parameters
         self.default_params = []
@@ -25,7 +26,7 @@ class FewShotModel:
 
     @staticmethod
     def __load_model(model: str, config: dict):
-        
+
         return REGISTRY[model][CONSTRUCTOR](REGISTRY[model][CONFIG](**config)).instantiate_model()
 
     def get_model_in_features(self):
