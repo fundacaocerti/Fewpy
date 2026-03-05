@@ -41,11 +41,12 @@ dependencies = [
     "regex>=2025.11.3",
     "scikit-image>=0.24.0",  
     "scipy>=1.13.1",
-    "setuptools==80.9.0",
-    "tqdm>=4.66.0",        
-    "torch==2.9.0",
-    "torchvision==0.24.0",
-    "pillow>=10.0.0",
+    "tdqm>=0.0.1",
+    "dropblock>=0.3.0",
+    "pillow>=11.3.0",
+    "torch>=2.8.0",
+    "torchvision>=0.23.0",
+    "yacs>=0.1.8",
 ]
 
 [dependency-groups]
