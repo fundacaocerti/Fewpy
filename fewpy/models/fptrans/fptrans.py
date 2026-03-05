@@ -1,6 +1,6 @@
 from collections import OrderedDict
 from functools import partial
-from fewpy.util.inference.register import register_constructor
+# from fewpy.util.inference.register import register_constructor
 from .config import FPTRANSConfig
 #from losses import get as get_loss
 
@@ -192,8 +192,15 @@ class FPTRANS(nn.Module):
         if self.Probs_return:
             return out #[bsz, 2, H, W] 
         else:
-            return out.argmax(dim=1) #[bsz, H, W] 
-        
+            results = []
+            masks =  out.argmax(dim=1) #[bsz, H, W] 
+            for mask in masks:
+                results.append({
+                    "task": "segmentation",
+                    "data": mask
+                })
+            
+            return results
 
     def classifier(self, sup_fts, qry_fts, sup_mask):
         """
@@ -378,16 +385,16 @@ class FPTRANS(nn.Module):
                 params.append(var)
         return [{'params': params}]
 
-    def predict(self, batch):
+    def predict(self, x, s_x, s_y):
         
         if self.args.SAHI:
             
-            line, column = batch['query_img'].size()[1:3]
+            line, column = x.shape()[1:3]
             pred_mask_batch = torch.zeros(self.args.bsz, line, column, 2, self.args.img_size, self.args.img_size)
 
             for i in range(line):
                 for j in range(column):
-                    pred_mask_batch[:,i,j,:,:,:]  = self(batch['query_img'][:,i,j,:,:,:], batch['support_imgs'],batch['support_masks'])
+                    pred_mask_batch[:,i,j,:,:,:]  = self(x[:,i,j,:,:,:], s_x, s_y)
 
             list_column = [pred_mask_batch[:, :, i, :, :, :] for i in range(column)]
             cat_list = list(map(lambda x: x.squeeze(2), list_column))
@@ -401,10 +408,10 @@ class FPTRANS(nn.Module):
 
             return novo_tensor
 
-        return self(batch['query_img'], batch['support_imgs'],batch['support_masks'])
+        return self(x, s_x, s_y)
 
 
-@register_constructor(name="FPTRANS", config_cls=FPTRANSConfig)
+# @register_constructor(name="FPTRANS", config_cls=FPTRANSConfig)
 class constructor_FPTRANS():
     def __init__(self, args):
             
@@ -412,8 +419,8 @@ class constructor_FPTRANS():
 
     def construct_yaml(self):
 
-        path_yaml = Path("./weights") / f"{self.args.data_set}" \
-            / f"{self.args.data_set}_{self.args.backbone}_fold{self.args.split}_{self.args.kshot}shot.yaml"
+        path_yaml = Path("./weights").expanduser() \
+            / f"{self.args.dataset}_{self.args.backbone}_fold{self.args.split}_{self.args.kshot}shot.yaml"
 
         return path_yaml
 
@@ -430,9 +437,9 @@ class constructor_FPTRANS():
         if not self.args.checkpoint is None:
             state_dict = self.args.checkpoint
         else:
-            weight_path = Path("./weights").expanduser() / f"{self.args.data_set}" \
-                / f"{self.args.data_set}_{self.args.backbone}_fold{self.args.split}_{self.args.kshot}shot.pth"
-            weights = torch.load(weight_path, map_location=device)
+            weight_path = Path("fewpy/models/fptrans/weights").expanduser() \
+                / f"{self.args.dataset}_{self.args.backbone}_fold{self.args.split}_{self.args.kshot}shot.pth"
+            weights = torch.load(weight_path, map_location=device, weights_only=False)
 
             if "model_state" in weights:
                 state_dict = weights["model_state"]
