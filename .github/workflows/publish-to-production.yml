@@ -1,0 +1,21 @@
+name: Publish to PyPI
+on:
+  release:
+    types: [published]
+jobs:
+  build-n-publish:
+    name: Publish to PyPI. Build and publish Python 🐍 distributions 📦
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install uv based on the version defined in pyproject.toml
+        uses: astral-sh/setup-uv@v6
+        with:
+          version-file: "pyproject.toml"
+
+      - name: Build and publish to PyPI
+        run: |
+          uv build
+          uv publish --token ${{ secrets.PYPI_TOKEN }}

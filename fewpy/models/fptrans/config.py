@@ -6,7 +6,7 @@ class FPTRANSConfig(BaseModel):
     kshot: int = Field(default=1)
     dataset: str = Field(default="pascal")
     backbone: str = Field(default="VIT-B")
-    split: int = Field(default=0)
+    split: int = Field(default=9)
     checkpoint: Dict | None = Field(default=None)
 
     Probs_return: bool = Field(default=True)

@@ -176,7 +176,7 @@ class VisionTransformer(nn.Module):
             self.head_dist = nn.Linear(self.embed_dim, self.num_classes) if num_classes > 0 else nn.Identity()
         if not pretrained == "":
             if str(pretrained).endswith('.pth'):
-                _load_weights_pth(logger, self, pretrained)
+                _load_weights_pth(self, pretrained)
             elif str(pretrained).endswith('.npz'):
                 _load_weights_npz(self, pretrained)
             else:
