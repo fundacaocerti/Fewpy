@@ -49,4 +49,4 @@ model.predict(
 
 In fewpy every model has standardized output dictionary. Every model outputs a dictionary containing a "task" value and a "data" value. Those are the specific task the model is designed for and the prediction data. In addition Qwen's output also contains confidence scores as the value for "conf".
 
-As previouly mentioned you may or may not use fewpy's dataset class and collate function. A full example of Qwen inference using fewpy is availble in [Fewpy/examples/models/qwen.py]().
+As previouly mentioned you may or may not use fewpy's dataset class and collate function. A full example of Qwen inference using fewpy is availble in [Fewpy/examples/models/qwen.py](./qwen.py).

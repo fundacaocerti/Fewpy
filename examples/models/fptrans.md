@@ -74,6 +74,6 @@ model.predict(
 
 ## Model output
 
-In fewpy every model has standardized output dictionary. Every model outputs a dictionary containing a "task" value and a "data" value. Those are the specific task the model is designed for and the prediction data. In addition FPTRANS's output also contains the raw predictions (no postprocessing) as the value for "raw_data".
+In fewpy every model has standardized output dictionary. Every model outputs a dictionary containing a "task" value and a "data" value. Those are the specific task the model is designed for and the prediction data. In addition FPTRANS's output also contains the raw predictions (no postprocessing) as the value for "raw_data". If the SAHI flag is up the model returns a single torch.Tensor.
 
-As previouly mentioned you may or may not use fewpy's dataset class and collate function. A full example of FPTRANS inference using fewpy is availble in [Fewpy/examples/models/fptrans.py]().
+As previouly mentioned you may or may not use fewpy's dataset class and collate function. A full example of FPTRANS inference using fewpy is availble in [Fewpy/examples/models/fptrans.py](./fptrans.py).

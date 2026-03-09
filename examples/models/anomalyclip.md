@@ -86,4 +86,4 @@ model.predict(
 
 In fewpy every model has standardized output dictionary. Every model outputs a dictionary containing a "task" value and a "data" value. Those are the specific task the model is designed for and the prediction data. In addition AnomalyCLIP's output also contains the raw predictions (no postprocessing) as the value for "raw_data".
 
-As previouly mentioned you may or may not use fewpy's dataset class and collate function. A full example of AnomalyCLIP inference using fewpy is availble in [Fewpy/examples/models/anomalyclip.py]().
+As previouly mentioned you may or may not use fewpy's dataset class and collate function. A full example of AnomalyCLIP inference using fewpy is availble in [Fewpy/examples/models/anomalyclip.py](./anomalyclip.py).

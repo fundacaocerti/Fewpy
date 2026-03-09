@@ -53,4 +53,4 @@ annotation = {
 }
 ```
 
-As previouly mentioned you may or may not use fewpy's dataset class and collate function. A full example of AirShot inference using fewpy is availble in [Fewpy/examples/models/airshot.py]().
+As previouly mentioned you may or may not use fewpy's dataset class and collate function. A full example of AirShot inference using fewpy is availble in [Fewpy/examples/models/airshot.py](./airshot.py).
