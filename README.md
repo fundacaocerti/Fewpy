@@ -54,13 +54,12 @@ Standard collators stack every element. In Few-Shot Learning, the support set is
 ```python
 from torch.utils.data import DataLoader
 
-# Initialize
+# initialize
 ds = FSLDataset(x=q_imgs, s_x=s_imgs, s_y=s_annots, img_size=(224, 224))
 
-# Use custom collate
+# use custom collate
 loader = DataLoader(ds, batch_size=4, collate_fn=fsl_collate)
 
-# Iterate
 for queries, support_x, support_y in loader:
     # queries: [Batch, C, H, W]
     # support_x: [Support_Size, C, H, W]
@@ -74,7 +73,7 @@ Fewpy provides implementations for several few-shot learning architectures. You 
 ### Quick Start Example
 To initialize a model, use the following structure:
 ```python
-from fewpy.util.inference.FewShotModel import FewShotModel
+from fewpy.util.inference import FewShotModel
 
 args = {
     "datasetname": 'voc_bottle_n_sofa',

@@ -119,8 +119,8 @@ The main.py file will define two functions, init_context and handler. In our ini
 ```python
 import json
 import torch
-from fewpy.util.inference.FewShotModel import FewShotModel
-from fewpy.util.inference.preprocessor import Preprocessor
+from fewpy.util.inference import FewShotModel
+from fewpy.util.inference import Preprocessor
 
 import base64
 import io
@@ -130,7 +130,6 @@ from pathlib import Path
 
 import open_clip as clip
 import torchvision.transforms as T
-
 
 import debugpy
 debugpy.listen(5678)

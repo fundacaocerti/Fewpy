@@ -25,9 +25,9 @@ import numpy as np
 # sys.path.append(str(script_dir))
 sys.path.append(os.getcwd())
 
-from fewpy.util.inference.FewShotModel import FewShotModel
-from fewpy.util.inference.preprocessor import Preprocessor
-from fewpy.util.cvat.adapter import CVATAdapter
+from fewpy.util.inference import FewShotModel
+from fewpy.util.inference import Preprocessor
+from fewpy.util.cvat import CVATAdapter
 import torchvision.transforms as T
 
 

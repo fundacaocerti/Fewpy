@@ -1,8 +1,8 @@
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from fewpy.util.inference.FewShotModel import FewShotModel
-from fewpy.util.data.dataset import FSLDataset, fsl_collate
+from fewpy.util.inference import FewShotModel
+from fewpy.util.data import FSLDataset, fsl_collate
 from torch.utils.data import DataLoader
 import torch
 
