@@ -1,5 +1,5 @@
 from fewpy.models.Qwen.config import QwenConfig
-from fewpy.util.inference.register import register_constructor
+from fewpy.models.register import register_constructor
 
 from transformers import AutoModelForImageTextToText, AutoProcessor
 from qwen_vl_utils import process_vision_info

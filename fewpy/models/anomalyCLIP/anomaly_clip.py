@@ -1,21 +1,22 @@
 from .base.vit import VisionTransformer, Transformer, LayerNorm
-from fewpy.util.inference.register import register_constructor
+from fewpy.models.register import register_constructor
 
 from typing import Tuple, Union
 from .config import AnomalyCLIPConfig
 
 import numpy as np
-import torch
-from torch import nn
 import torch.nn.functional as F
+
+import torch
 import cv2
+import sys
+
+from torch import nn
 
 from scipy.ndimage import gaussian_filter
 from .base.prompt_ensemble import AnomalyCLIP_PromptLearner
 
 from pathlib import Path
-
-import sys
 
 
 def get_similarity_map(sm, shape):

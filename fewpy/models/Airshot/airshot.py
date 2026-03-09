@@ -25,9 +25,10 @@ from fewpy.models.Airshot.fewx.config import get_cfg
 from detectron2.modeling import build_model
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.data import DatasetCatalog, MetadataCatalog
+from detectron2.structures import Instances, Boxes
 from typing import List
 
-from fewpy.util.inference.register import register_constructor
+from fewpy.models.register import register_constructor
 
 
 class AirShot(torch.nn.Module):
@@ -51,7 +52,13 @@ class AirShot(torch.nn.Module):
 
         return self.model(x)
     
-    def predict(self, x: List[torch.Tensor], s_x: List[torch.Tensor] | List[str], s_y: List[dict]):
+    def predict(
+            self,
+            x: List[torch.Tensor]=None, 
+            s_x: List[torch.Tensor] | List[str]=None, 
+            s_y: List[dict]=None, 
+            y: List[dict]=None
+        ):
         """
         self.model.forward:
         Args:
@@ -68,9 +75,30 @@ class AirShot(torch.nn.Module):
                 key "label_id", contains the id of the detected object
         """
 
+        if self.training:
+            batched_inputs = []
+            for i, xi in enumerate(x):
+                inst = Instances((xi.size(-2), xi.size(-1)))
+                inst.gt_boxes = Boxes(torch.tensor(y[i]["bboxes"], dtype=torch.float32))
+                inst.gt_classes = torch.tensor(y[i]["class_ids"], dtype=torch.int64)
+                xi = {
+                    "image": xi.to(self.device),
+                    "height": xi.size(-2),
+                    "width": xi.size(-1),
+                    "instances": inst,
+                    "support_images": s_x[i],
+                    "support_bboxes": s_y[i],
+                }
+                batched_inputs.append(xi)
+            return self({"batched_inputs": batched_inputs})
+
         with torch.no_grad():
 
             if not self.cached:
+
+                if s_x is None and s_y is None:
+                    raise ValueError("No cached support set, s_x and s_y should not be NoneType")
+
                 support_set = [
                     {
                         "support_box": s_yi["bboxes"],
@@ -138,13 +166,11 @@ class constructor_AirShot:
         metadata.set(thing_classes=cfg.classnames)
         metadata.set(thing_dataset_id_to_contiguous_id = cfg.mapping_to_contiguous_ids)
 
-        # print("cfg", cfg)
-
         self.cfg = get_cfg()
         self.cfg.merge_from_file(cfg_path)
         self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = cfg.confidence_threshold
         self.cfg.DATASETS.TEST = [cfg.datasetname]
-        self.cfg.MODEL.WEIGHTS = str(weights_path)
+        self.cfg.MODEL.WEIGHTS = str(model_path)
         self.cfg.freeze()
         
     def instantiate_model(self, device=None):

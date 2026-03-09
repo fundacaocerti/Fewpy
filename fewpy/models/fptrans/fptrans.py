@@ -1,6 +1,6 @@
 from collections import OrderedDict
 from functools import partial
-from fewpy.util.inference.register import register_constructor
+from fewpy.models.register import register_constructor
 from .config import FPTRANSConfig
 #from losses import get as get_loss
 
