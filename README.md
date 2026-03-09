@@ -73,7 +73,7 @@ Fewpy provides implementations for several few-shot learning architectures. You 
 
 ### Quick Start Example
 To initialize a model, use the following structure:
-
+```python
 from fewpy.util.inference.FewShotModel import FewShotModel
 
 args = {
@@ -84,6 +84,7 @@ args = {
 }
 
 model = FewShotModel(model="AirShot", config=args)
+```
 
 ### Supported Models
 
