@@ -18,6 +18,7 @@ class FSLDataset(Dataset):
                  x: list[Image],
                  s_x: list[Image]=None,
                  s_y: list[dict] | list[torch.Tensor] | torch.Tensor=None,
+                 labels: list[dict]=None,
                  img_size: tuple[int]=None,
                  max_size: int=None,
                  pixel_norm: tuple=None,
@@ -48,6 +49,7 @@ class FSLDataset(Dataset):
         self.transform_datapoints = transform_datapoints
         self.img_size = img_size
         self.method = support_set_preprocessing_method.lower()
+        self.labels = labels
 
     def __len__(self) -> int:
         return len(self.data)
@@ -112,12 +114,12 @@ class FSLDataset(Dataset):
 
     def resize_annotations(self):
 
+        if self.img_size is None:
+            raise ValueError("Support Set cannot be resized if img_size is None!")
+
         self.transform_s_x()
 
         if isinstance(self.s_y[0], torch.Tensor):
-
-            if self.img_size is None:
-                raise ValueError("Support Set cannot be resized if img_size is None!")
 
             new_s_y = []
             for s_yi in self.s_y:
@@ -158,35 +160,26 @@ class FSLDataset(Dataset):
             s_x.append(img)
 
         self.s_y = s_y
-
         self._stack_sx(s_x)
 
     def detection_crop(self):
 
         if self.img_size is None:
             raise ValueError("Support Set cannot be resized if img_size is None!")
-
-        permuted_indexes = np.random.permutation(len(self.s_x))
+        
         s_x = []
         s_y = []
-        n_per_class = [0] * self.c
-        for n in permuted_indexes:
-            xn, yn = self.s_x[n], self.s_y[n]
+        for xn, yn in zip(self.x, self.y):
 
-            if all([k >= self.k for k in n_per_class]):
-                break
-            
-            if n_per_class[yn["class_ids"][0]] < self.k:
-                n_per_class[yn["class_ids"][0]] += 1
-                s_y.append({
-                    "bboxes": torch.tensor(yn["bboxes"]).squeeze(1),
-                    "cls": yn["class_ids"][0]+1,
-                })
-                xn = self._padded_crop(xn, yn["bboxes"][0], self.img_size)
-                s_x.append(xn)
+            s_y.append({
+                "bboxes": torch.tensor(yn["bboxes"]).squeeze(1),
+                "cls": yn["class_ids"][0]+1,
+            })
+            xn = self._padded_crop(xn, yn["bboxes"][0], self.img_size)
+            s_x.append(xn)
 
-        s_y = torch.stack(s_y).squeeze(1)
-        self.s_x = torch.stack(s_x), s_y
+        self.s_x = torch.stack(s_x)
+        self.s_y = s_y
     
     def __getitem__(self, index: int):
 
@@ -198,20 +191,28 @@ class FSLDataset(Dataset):
             return xi
         
         if self.support_set_preproc:
+
+            if not self.labels is None:
+                return xi, self.labels[index], self.s_x, self.s_y
+
             return xi, self.s_x, self.s_y
         
         match self.method:
 
             case "standard":
+                print("standard")
                 self.transform_s_x()
 
             case "resize_annotations":
+                print("resize")
                 self.resize_annotations()
 
             case "normalize_annotations":
+                print("normalize")
                 self.normalize_annotations()
 
             case "detection_crop":
+                print("detection")
                 self.detection_crop()
 
             case "none":
@@ -219,6 +220,9 @@ class FSLDataset(Dataset):
 
             case _:
                 raise ValueError("Unsuported support_set_preprocessing_method configured!") 
+            
+        if not self.labels is None:
+            return xi, self.labels[index], self.s_x, self.s_y
 
         return xi, self.s_x, self.s_y
     

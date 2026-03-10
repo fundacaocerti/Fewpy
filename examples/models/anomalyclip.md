@@ -2,7 +2,7 @@
 
 In order to run the AnomalyCLIP implementation within fewpy you will need:
     - to import fewpy's FewShotModel class
-    - a checkpoint (weight) file for the model named "anomalyClip.pth"
+    - a checkpoint (weight) file for the model named "anomaly_clip.pth"
     - ViT-L-14-336px weights
     - to import fewpy's FSLDataset (optional)
 

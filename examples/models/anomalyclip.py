@@ -6,7 +6,7 @@ import torch
 import PIL
 import open_clip as clip
 
-from torchvision.transforms import ToPILImage, ToTensor, Resize
+from torchvision.transforms import ToPILImage, ToTensor
 from pathlib import Path
 
 
@@ -16,7 +16,6 @@ IMG_SIZE = 448
 
 totensor = ToTensor()
 converter = ToPILImage()
-resize = Resize((IMG_SIZE, IMG_SIZE))
 
 # load images
 root = Path("./KolektorSDD").expanduser()
@@ -33,9 +32,9 @@ for i, subset in enumerate(root.iterdir()):
     if i >= MAX_SUBSETS:
         break
     support_images += [PIL.Image.open(img_path).convert("RGB") for img_path in subset.glob("*.jpg")]
-    support_ground_truth += [resize(torch.Tensor(totensor(PIL.Image.open(img_path)))) for img_path in subset.glob("*.bmp")]
+    support_ground_truth += [totensor(PIL.Image.open(img_path)) for img_path in subset.glob("*.bmp")]
 
-support_ground_truth = torch.stack(support_ground_truth).squeeze(1)
+# support_ground_truth = torch.stack(support_ground_truth).squeeze(1)
 query = list(query_path.glob("*.jpg"))
 query_images = [PIL.Image.open(img_path).convert("RGB") for img_path in query]
 W, H = query_images[0].size
@@ -48,14 +47,15 @@ ds = FSLDataset(
     s_x=support_images,
     s_y=support_ground_truth,
     img_size=(IMG_SIZE, IMG_SIZE),
-    pixel_norm=((0.485, 0.456, 0.0406), (0.229, 0.224, 0.225))       # (mean, std)
+    pixel_norm=((0.485, 0.456, 0.0406), (0.229, 0.224, 0.225)),       # (mean, std)
+    support_set_preprocessing_method="resize_annotations",
 )
 
 dl = DataLoader(
     ds, 
     batch_size=8,
     shuffle=False,
-    collate_fn=fsl_collate      # Fewpy collate function
+    collate_fn=fsl_collate,      # Fewpy collate function
 )
 
 # expects H == W
@@ -122,7 +122,7 @@ Returns:
 """
 result = []
 for batch, s_x, s_y in dl:
-    # print(f"shapes: batch = {batch.shape}, s_x = {s_x.shape}, s_y = {s_y.shape}")
+    print(f"shapes: batch = {batch.shape}, s_x = {s_x.shape}, s_y = {s_y.shape}")
     result += model.predict(
         x=batch,
         s_x=s_x,
