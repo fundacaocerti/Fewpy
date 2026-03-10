@@ -25,20 +25,20 @@ print(d.download("ViT-L/14@336px"))
 In order to instatiate the model FewShotModel is necessary, so import it as in the following snippet.
 
 ```python
-from fewpy.util.inference.FewShotModel import FewShotModel
+from fewpy.inference import FewShotModel
 ```
 
 You may or may not use fewpy's FSLDataset class. Notice that it is a recommendation to use torch's DataLoader with FSLDataset but any compatible implementation should work. Fewpy also contains a collate function that should be used with torch.util.data.DataLoader.
 
 ```python
-from fewpy.util.data.dataset import FSLDataset, fsl_collate
+from fewpy.util.data import FSLDataset, fsl_collate
 from torch.utils.data import DataLoader
 ```
 
 Additionaly, AnomalyCLIP also requires a tokenizer to be added as a preprocessor. Use open_clip.tokenize as the model was trained with it. Add the Preprocessor object when initializing the model.
 
 ```python
-from fewpy.util.inference.preprocessor import Preprocessor
+from fewpy.inference import Preprocessor
 import open_clip as clip
 ```
 

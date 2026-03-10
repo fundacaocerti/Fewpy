@@ -1,5 +1,5 @@
-from fewpy.util.inference import FewShotModel
-from fewpy.util.data import FSLDataset
+from fewpy.inference import FewShotModel
+from fewpy.data import FSLDataset
 from torch.utils.data import DataLoader
 
 from pathlib import Path

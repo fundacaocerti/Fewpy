@@ -9,7 +9,7 @@ In order to run the Qwen implementation within fewpy you will need:
 In order to instatiate the model FewShotModel is necessary, so import it as in the following snippet.
 
 ```python
-from fewpy.util.inference.FewShotModel import FewShotModel
+from fewpy.inference import FewShotModel
 ```
 
 You may or may not use fewpy's FSLDataset class. Notice that it is a recommendation to use torch's DataLoader with FSLDataset but any compatible implementation works. Fewpy also contains a collate function that should be used with torch.util.data.DataLoader.
@@ -17,7 +17,7 @@ You may or may not use fewpy's FSLDataset class. Notice that it is a recommendat
 Since Qwen takes list[PIL.Image.Image] as input, you will need a collate function that does not stack the batch. If using FSLDataset initialize with transform_datapoints=False.
 
 ```python
-from fewpy.util.data.dataset import FSLDataset
+from fewpy.util.data import FSLDataset
 from torch.utils.data import DataLoader
 ```
 

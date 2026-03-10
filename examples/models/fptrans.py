@@ -1,4 +1,4 @@
-from fewpy.util.inference import FewShotModel
+from fewpy.inference import FewShotModel
 from fewpy.util.data import FSLDataset
 
 from pathlib import Path

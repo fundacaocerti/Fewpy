@@ -1,8 +1,6 @@
-from fewpy.util.inference import FewShotModel
-from fewpy.util.inference import Preprocessor
+from fewpy.inference import Preprocessor, FewShotModel
 from fewpy.util.data import FSLDataset, fsl_collate
 from torch.utils.data import DataLoader
-
 
 import torch
 import PIL
