@@ -87,7 +87,7 @@ class AirShot(torch.nn.Module):
                     "width": xi.size(-1),
                     "instances": inst,
                     "support_images": s_x[i],
-                    "support_bboxes": s_y[i],
+                    "support_bboxes": torch.stack([syi["bbox"] for syi in s_y[i]]).squeeze(1),
                 }
                 batched_inputs.append(xi)
             return self({"batched_inputs": batched_inputs})
