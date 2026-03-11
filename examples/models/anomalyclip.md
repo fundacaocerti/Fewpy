@@ -15,9 +15,9 @@ The easiest way to make the weights available to fewpy is to download them, rena
 ViT weights can be downloaded through fewpy:
 
 ```python
-import fewpy.util.download as d
+from fewpy.util.download import download
 
-print(d.download("ViT-L/14@336px"))
+print(download("ViT-L/14@336px"))
 ```
 
 ## Importing necessary fewpy tooling

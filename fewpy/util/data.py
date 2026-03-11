@@ -120,7 +120,6 @@ class FSLDataset(Dataset):
         self.transform_s_x()
 
         if isinstance(self.s_y[0], torch.Tensor):
-
             new_s_y = []
             for s_yi in self.s_y:
                 new_s_y.append(T.functional.resize(
@@ -129,7 +128,25 @@ class FSLDataset(Dataset):
                     interpolation=T.functional.InterpolationMode.NEAREST,
                 ))
             self.s_y = torch.stack(new_s_y).squeeze(1)
-    
+
+
+    def resize_labels(self):
+
+        self.resize_annotations()
+
+        if self.labels is None:
+            raise ValueError("Cannot resize None!")
+        
+        if isinstance(self.labels[0], torch.Tensor):
+            new_labels = []
+            for yi in self.labels:
+                new_labels.append(T.functional.resize(
+                    yi,
+                    self.img_size,
+                    interpolation=T.functional.InterpolationMode.NEAREST,
+                ))
+            self.labels = new_labels
+
     def normalize_annotations(self):
 
         self._check_support_set()
@@ -200,20 +217,19 @@ class FSLDataset(Dataset):
         match self.method:
 
             case "standard":
-                print("standard")
                 self.transform_s_x()
 
             case "resize_annotations":
-                print("resize")
                 self.resize_annotations()
 
             case "normalize_annotations":
-                print("normalize")
                 self.normalize_annotations()
 
             case "detection_crop":
-                print("detection")
                 self.detection_crop()
+
+            case "resize_labels":
+                self.resize_labels()
 
             case "none":
                 self.support_set_preproc = True

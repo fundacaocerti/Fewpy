@@ -225,11 +225,26 @@ class AnomalyCLIP(nn.Module):
         
         # return logits_per_image, logits_per_text
 
+    def train(self, mode: bool=True):
+        super().train(mode)
+        
+        if mode:
+            super().train(False)
+            self.prompt_learner.train()
+            self.training = True
+
+        return self
+    
+    def parameters(self):
+
+        return self.prompt_learner.parameters()
+
     def predict(self,
-                x,
-                s_x,
-                s_y,
-                user_tknized_prompts):
+                x: torch.Tensor,
+                s_x: torch.Tensor,
+                s_y: torch.Tensor,
+                user_tknized_prompts: list[str],
+            ):
         """
         self.model.predict:
         Args:
@@ -248,6 +263,36 @@ class AnomalyCLIP(nn.Module):
                     The dict contains a string "segmentation" under the key "task" to specify the task type,
                     a "data" mask, Tensor of format (H, W) and a "postproc_data" mask, Tensor of format (H, W)
         """
+
+        if self.training:
+            
+            with torch.no_grad():
+                # Apply DPAM to the layer from 6 to 24
+                # DPAM_layer represents the number of layer refined by DPAM from top to bottom
+                # DPAM_layer = 1, no DPAM is used
+                # DPAM_layer = 20 as default
+                image_features, patch_features = self.encode_image(x, self.config.feature_list, DPAM_layer = 20)
+                image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+                    
+           ####################################
+            prompts, tokenized_prompts, compound_prompts_text = self.prompt_learner(cls_id = None)
+            text_features = self.encode_text_learn(prompts, tokenized_prompts, compound_prompts_text).float()
+            text_features = torch.stack(torch.chunk(text_features, dim = 0, chunks = 2), dim = 1)
+            text_features = text_features/text_features.norm(dim=-1, keepdim=True)
+            # Apply DPAM surgery
+            text_probs = image_features.unsqueeze(1) @ text_features.permute(0, 2, 1)
+            text_probs = text_probs[:, 0, ...]/0.07
+            #########################################################################
+            similarity_map_list = []
+            # similarity_map_list.append(similarity_map)
+            for idx, patch_feature in enumerate(patch_features):
+                if idx >= self.config.feature_map_layer[0]:
+                    patch_feature = patch_feature/ patch_feature.norm(dim = -1, keepdim = True)
+                    similarity, _ = compute_similarity(patch_feature, text_features[0])
+                    similarity_map = get_similarity_map(similarity[:, 1:, :], self.config.image_size).permute(0, 3, 1, 2)
+                    similarity_map_list.append(similarity_map)
+
+            return similarity_map_list, text_probs
 
         with torch.no_grad():
 
@@ -361,6 +406,7 @@ class AnomalyCLIP(nn.Module):
 
             results = []
             final_map_filtered = final_map_filtered.unsqueeze(1)
+
             for map in final_map_filtered:
 
                 mask = map.squeeze().cpu().detach().numpy()
@@ -399,7 +445,7 @@ class contructor_AnomalyCLIP:
         
         checkpoint_path = model_path.parent / "anomaly_clip.pth"
         if not checkpoint_path.exists():
-            raise FileNotFoundError(f"Checkpoint not found at {str(checkpoint_path)}!")
+            checkpoint_path = None
         
         
         model = torch.jit.load(model_path, map_location=device)
@@ -455,8 +501,9 @@ class contructor_AnomalyCLIP:
 
         model.load_state_dict(state_dict)
         model.prompt_learner = AnomalyCLIP_PromptLearner(model.to("cpu"), dsgn_details)
-        checkpoint = torch.load(checkpoint_path, map_location="cpu")
-        model.prompt_learner.load_state_dict(checkpoint["prompt_learner"])
+        if not checkpoint_path is None:
+            checkpoint = torch.load(checkpoint_path, map_location="cpu")
+            model.prompt_learner.load_state_dict(checkpoint["prompt_learner"])
         model.prompt_learner.to(device)
 
         model.to(device)
