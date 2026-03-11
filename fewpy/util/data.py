@@ -19,7 +19,7 @@ class FSLDataset(Dataset):
                  s_x: list[Image]=None,
                  s_y: list[dict] | list[torch.Tensor] | torch.Tensor=None,
                  labels: list[dict]=None,
-                 img_size: tuple[int]=None,
+                 img_size: tuple[int] | int=None,
                  max_size: int=None,
                  pixel_norm: tuple=None,
                  support_set_preprocessing_method: str="standard",
@@ -74,6 +74,9 @@ class FSLDataset(Dataset):
         self.support_set_preproc = True
 
     def _padded_crop(self, image, bbox, output_size=(320, 320), padding_ratio=0.5):
+            if isinstance(output_size, int):
+                output_size = (output_size, output_size)
+
             x1, y1, x2, y2 = bbox
             w, h = x2 - x1, y2 - y1
             
@@ -83,7 +86,7 @@ class FSLDataset(Dataset):
             y1 = max(0, y1 - pad_h)
             x2 = min(image.width if not isinstance(image, torch.Tensor) else image.shape[2], x2 + pad_w)
             y2 = min(image.height if not isinstance(image, torch.Tensor) else image.shape[1], y2 + pad_h)
-            
+
             if isinstance(image, torch.Tensor):
                 support_patch = image[:, int(y1):int(y2), int(x1):int(x2)]
             else:
@@ -186,17 +189,19 @@ class FSLDataset(Dataset):
         
         s_x = []
         s_y = []
-        for xn, yn in zip(self.x, self.y):
+        for xn, yn in zip(self.s_x, self.s_y):
 
             s_y.append({
                 "bboxes": torch.tensor(yn["bboxes"]).squeeze(1),
-                "cls": yn["class_ids"][0]+1,
+                "cls": yn["cls"][0]+1,
             })
             xn = self._padded_crop(xn, yn["bboxes"][0], self.img_size)
             s_x.append(xn)
 
         self.s_x = torch.stack(s_x)
         self.s_y = s_y
+
+        self.support_set_preproc = True
     
     def __getitem__(self, index: int):
 

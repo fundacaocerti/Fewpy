@@ -9,6 +9,7 @@ from detectron2.checkpoint import DetectionCheckpointer
 import detectron2.data.detection_utils as utils
 
 from PIL.Image import Image
+from pathlib import Path
 
 import copy
 
@@ -148,7 +149,7 @@ ds = FSLDataset(
     img_size=600,
     max_size=1000,
     pixel_norm=((103.530, 116.280, 123.675), (1.0, 1.0, 1.0)),       # (mean, std)
-    support_set_processing_method="detection_crop",
+    support_set_preprocessing_method="detection_crop",
 )
 
 dl = DataLoader(
