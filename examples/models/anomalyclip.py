@@ -61,6 +61,7 @@ dl = DataLoader(
 # expects H == W
 """
 feature_list: list[int], A list of feature (for scaling) indices, default=[6, 12, 18, 24]
+feature_map_layer: list[int], In training, filters which feature sets are used to calculate loss
 image_size: int, default=700 (700x700)
 depth: int, Depth of ViT, default=9
 n_ctx: int, Number of context tokens, default=12

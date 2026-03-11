@@ -105,6 +105,30 @@ dl = torch.utils.data.DataLoader(
     collate_fn=fptrans_collate      # fptrans collate function
 )
 
+"""
+kshot: int, Number of support examples per class in the few-shot setup (e.g., 1-shot learning)
+dataset: str, The dataset being used for training or evaluation (e.g., Pascal VOC)
+backbone: str, The neural network backbone used for feature extraction (Vision Transformer Base)
+split: int, The specific dataset split used for cross-validation/testing
+checkpoint: dict | str | None, Dictionary or path containing pre-trained model weights to load
+Probs_return: bool, Whether the model should return soft probability maps instead of hard logits/masks
+drop_dim: int, The specific tensor dimension along which dropout is applied
+drop_rate: float, The dropout probability rate used to prevent overfitting
+block_size: int, The patch/block resolution for the Vision Transformer (e.g., 16x16 pixel patches)
+height: int, The input image height (often paired with img_size)
+pretrained: str, Path or identifier for the backbone's pre-trained weights (e.g., ImageNet weights)
+SAHI: bool, Flag to enable Slicing Aided Hyper Inference (used for detecting/segmenting small objects)
+bg_num: int, Number of background prototypes or background tokens used to model background context
+bsz: int, The batch size used in SAHI inference
+img_size: int, The overall spatial dimensions to resize the input image to (e.g., 700x700)
+training: bool, Boolean flag indicating whether the network is in training mode or evaluation mode
+vit_depth: int, The specific depth (number of transformer layers) extracted from the ViT backbone
+vit_stride: int, The stride used for ViT patch extraction (affects the sequence length and overlap)
+coco2pascal: bool, Flag for cross-dataset evaluation (e.g., training on COCO, evaluating on Pascal VOC)
+num_prompt: int, The number of learnable visual prompt tokens injected into the transformer
+pt_std: float, Standard deviation for the normal distribution used to initialize the prompt tokens
+"""
+
 args = {
     "kshot": 1,
     "dataset": "pascal",
