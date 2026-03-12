@@ -183,9 +183,10 @@ for epoch in range(epochs):
         total_loss += loss.item()
 
         optimizer.step()
+        print(f"  Loss: {loss:.4f}")
 
-    print(f"  Loss: {loss:.4f}")
     avg_loss = total_loss / len(dl)
+    print(f"Average Loss for Epoch {epoch + 1}: {avg_loss / epochs:.4f}")
 
-print(f"Average Loss for Epoch {epoch + 1}: {avg_loss / epochs:.4f}")
 print("\nFine-tuning complete!")
+torch.save(model.state_dict(), "anomaly_clip.pth")
