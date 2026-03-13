@@ -80,7 +80,7 @@ class AirShot(torch.nn.Module):
             for i, xi in enumerate(x):
                 inst = Instances((xi.size(-2), xi.size(-1)))
                 inst.gt_boxes = Boxes(torch.tensor(y[i]["bboxes"], dtype=torch.float32))
-                inst.gt_classes = torch.tensor(y[i]["class_ids"], dtype=torch.int64)
+                inst.gt_classes = torch.tensor(y[i]["cls"], dtype=torch.int64)
                 xi = {
                     "image": xi.to(self.device),
                     "height": xi.size(-2),
@@ -171,6 +171,8 @@ class constructor_AirShot:
         self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = cfg.confidence_threshold
         self.cfg.DATASETS.TEST = [cfg.datasetname]
         self.cfg.MODEL.WEIGHTS = str(model_path)
+        self.cfg.INPUT.FS.SUPPORT_SHOT = cfg.support_shot
+        self.cfg.INPUT.FS.SUPPORT_WAY = cfg.support_way
         self.cfg.freeze()
         
     def instantiate_model(self, device=None):

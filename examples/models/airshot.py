@@ -107,13 +107,16 @@ classnames: list[str], name of each class in the dataset
 mapping_to_contiguous_ids: dict[int], id mapper in case dataset does not have contiguous ids
 
 confidence_threshold: float, lower bound of confidence for accepted proposals
+support_shot: int, Number of examples per class in the support set (in training mode)
+support_way: int, Number of novel classes in the support set (in training mode)
 """
 
 args = {
     "datasetname": 'voc_bottle_n_sofa',
     "classnames": ["bottle", "sofa"],
     "confidence_threshold": 0.5,
-    "mapping_to_contiguous_ids": {"bottle": 0, "sofa": 1}
+    "mapping_to_contiguous_ids": {"bottle": 0, "sofa": 1},
+    "support_shot": 5,
 }
 
 # config = AnomalyCLIPConfig(**args)

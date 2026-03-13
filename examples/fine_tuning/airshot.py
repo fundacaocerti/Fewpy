@@ -8,10 +8,11 @@ from detectron2.utils.events import EventStorage
 from detectron2.checkpoint import DetectionCheckpointer
 import detectron2.data.detection_utils as utils
 
-from PIL.Image import Image
+from PIL import Image
 from pathlib import Path
 
 import copy
+import json
 
 import xml.etree.ElementTree as ET
 import torch.nn as nn
@@ -19,80 +20,56 @@ import numpy as np
 import torch
 
 
-def load_xml_data(CLASSES: str, n=30, k=10):
+def load_data(path, n=30, k=10):
     
-    dataset = Path("./testdata2").expanduser()
-    annotations = dataset / "selected_annot" 
-    images = dataset / "selected_img"
+    with open(path, "r") as f:
+        data = json.loads(f.read())
 
-    name2id = {CLASSES[i]: i for i in range(len(CLASSES))}
+    annotations = data["annotations"]
+    annotations = np.random.permutation(annotations)
+    n_selected_img = [0, 0]
+    n_support_img = [0, 0]
     
-    counter = {cls: 0 for cls in CLASSES}
-    counter_query = 0
-    
-    annotations = list(annotations.glob("*.xml"))
-    # print("retrieving", len(annotations), "annotations")
-    # print()
-    
-    indices = np.random.permutation(len(annotations))
-    x = [] # PIL.Image.Image
-    s_x = [] # PIL.Image.Image
-    s_y = [] # dict: {"class_ids: [class_id], "bboxes": [bbox]}
-    y = [] # dict: {"class_ids: [class_id], "bboxes": [bbox]}
-    
-    for i in indices:
-        annotation = annotations[i]
-    
-        tree = ET.parse(annotation)
-        root = tree.getroot()
-        image = images / root.find("filename").text
-        s_yi = dict()
-        first = True
-        cls = None
-    
-        size = root.find("size")
-        width = int(size.find("width").text)
-        height = int(size.find("height").text)
-    
-        for obj in root.findall("object"):
-            name = obj.find("name").text
-            if name not in CLASSES:
-                continue
-    
-            if cls is not None and name != cls:
-                continue
-    
-            bndbox = obj.find("bndbox")
-            bbox = [
-                int(bndbox.find("xmin").text) / width,
-                int(bndbox.find("ymin").text) / height,
-                int(bndbox.find("xmax").text) / width,
-                int(bndbox.find("ymax").text) / height
-            ]
-            # bbox = torch.as_tensor(bbox, dtype=torch.float32).unsqueeze(0)
-    
-            if first: 
-                first = False
-                s_yi["class_ids"] = [name2id[name]]
-                s_yi["bboxes"] = [bbox]
-                cls = name
-                break
-    
-            s_yi["bboxes"].append(bbox)
-            s_yi["class_ids"].append(name2id[name])
-    
-        if counter[cls] < k:
-            s_y.append(s_yi)
-            s_x.append(Image.fromarray(utils.read_image(image, format='BGR')))
-    
-            counter[cls] += 1
-        elif counter_query < n:
-            x += [Image.fromarray(utils.read_image(image, format='BGR'))]
-            s_yi["height"] = height
-            s_yi["width"] = width
-            y += [s_yi]
+    x = []
+    y = []
+    s_x = []
+    s_y = []
 
-            counter_query += 1
+    for annot in annotations:
+        
+        class_id = annot["category_id"] - 1
+
+        if class_id > 1:
+            continue
+        
+        if all([ni >= n for ni in n_selected_img]) \
+            and all([ki >= k for ki in n_support_img]):
+            break
+
+        if n_selected_img[class_id] >= n:
+            if n_support_img[class_id] >= k:
+                continue
+
+            n_support_img[class_id] += 1
+            n_selected_img[class_id] += 1
+            img_path = Path("images") / f"{annot["image_id"]}.jpg"
+            s_x.append(Image.fromarray(utils.read_image(img_path, format="BGR")))
+            xmin, ymin, w, h = annot["bbox"]
+            bbox = xmin, ymin, xmin + w, ymin + h
+            s_y.append({
+                "cls": [class_id],
+                "bboxes": [bbox],
+            })
+
+        n_selected_img[class_id] += 1
+        img_path = Path("images") / f"{annot["image_id"]}.jpg"
+        x.append(Image.fromarray(utils.read_image(img_path, format="BGR")))
+        xmin, ymin, w, h = annot["bbox"]
+        bbox = xmin, ymin, xmin + w, ymin + h
+        y.append({
+            "cls": [class_id],
+            "bboxes": [bbox],
+        })
 
     return x, y, s_x, s_y
 
@@ -103,15 +80,15 @@ def fsl_collate(batch):
     return batch, labels, s_x, s_y
 
 classnames = ["1", "2"]
-N, K = 20, 10 # number of examples, number of support examples per class
+N, K = 20, 5 # number of examples, number of support examples per class
 epochs = 10
 batch_size = 4
 learning_rate = 2e-6
 SHOW_WEIGHT_CHANGE = False
 
 mapper = {
-    "1": 0,
-    "2": 1,
+    1: 0,
+    2: 1,
 }
 
 args = {
@@ -127,8 +104,10 @@ model = FewShotModel(
     config=args
 )
 
+# print(model)
+
 # freeze backbone
-for param in model.model.backbone.parameters():
+for param in model.model.model.backbone.parameters():
     param.requires_grad = False
     
 # for model in [model.model.roi_heads, model.model.proposal_generator, model.model.fuser, model.model.apn]:
@@ -139,8 +118,7 @@ params = [p for p in model.parameters() if p.requires_grad]
 
 optimizer = AdamW(params, lr=learning_rate)
 
-CLASSES = ("bottle", "sofa")
-x, labels, s_x, s_y = load_xml_data(CLASSES, n=N, k=K)
+x, labels, s_x, s_y = load_data("./data/annotations.json", n=N, k=K)
 ds = FSLDataset(
     x=x,
     labels=labels,
@@ -177,11 +155,11 @@ for epoch in range(epochs):
         with EventStorage() as storage:
             
             batch, labels, s_x, s_y = batch
-            batch = [xi.to(device) for xi in batch]
+            batch = [xi.to(model.device) for xi in batch]
             
             optimizer.zero_grad()
             
-            loss_dict = model.predict(batch, y=labels, s_x=s_x, s_y=s_y)
+            loss_dict = model.predict(x=batch, y=labels, s_x=s_x, s_y=s_y)
             loss = sum(loss for loss in loss_dict.values())
             
             loss.backward()

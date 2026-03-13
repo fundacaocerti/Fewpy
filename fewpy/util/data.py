@@ -50,6 +50,7 @@ class FSLDataset(Dataset):
         self.img_size = img_size
         self.method = support_set_preprocessing_method.lower()
         self.labels = labels
+        self.pixel_norm = pixel_norm
 
     def __len__(self) -> int:
         return len(self.data)
@@ -73,7 +74,7 @@ class FSLDataset(Dataset):
 
         self.support_set_preproc = True
 
-    def _padded_crop(self, image, bbox, output_size=(320, 320), padding_ratio=0.5):
+    def _padded_crop(self, image, bbox, output_size=(320, 320), norm=False, padding_ratio=0.5):
             if isinstance(output_size, int):
                 output_size = (output_size, output_size)
 
@@ -86,22 +87,33 @@ class FSLDataset(Dataset):
             y1 = max(0, y1 - pad_h)
             x2 = min(image.width if not isinstance(image, torch.Tensor) else image.shape[2], x2 + pad_w)
             y2 = min(image.height if not isinstance(image, torch.Tensor) else image.shape[1], y2 + pad_h)
+            w, h = x2 - x1, y2 - y1
+        
+            bbox = [
+                (bbox[0] - x1) / w,
+                (bbox[1] - y1) / h,
+                (bbox[2] - x1) / w,
+                (bbox[3] - y1) / h,
+            ]
 
             if isinstance(image, torch.Tensor):
                 support_patch = image[:, int(y1):int(y2), int(x1):int(x2)]
             else:
                 support_patch = image.crop((x1, y1, x2, y2))
+
+            H, W = output_size
+            bbox = [bbox[0] * W, bbox[1] * H, bbox[2] * W, bbox[3] * H]
         
             support_patch = F.resize(support_patch, output_size)
         
             if not isinstance(support_patch, torch.Tensor):
                 support_patch = d2_tensor_transform(support_patch)
                 
-            mean = [0.485, 0.456, 0.406]
-            std = [0.229, 0.224, 0.225]
-            support_patch = F.normalize(support_patch, mean=mean, std=std)
+            if norm:
+                mean, std = self.pixel_norm
+                support_patch = F.normalize(support_patch, mean=mean, std=std)
         
-            return support_patch
+            return support_patch, bbox
     
     def transform_s_x(self):
 
@@ -182,7 +194,7 @@ class FSLDataset(Dataset):
         self.s_y = s_y
         self._stack_sx(s_x)
 
-    def detection_crop(self):
+    def detection_crop(self, norm=False):
 
         if self.img_size is None:
             raise ValueError("Support Set cannot be resized if img_size is None!")
@@ -191,11 +203,11 @@ class FSLDataset(Dataset):
         s_y = []
         for xn, yn in zip(self.s_x, self.s_y):
 
+            xn, bbox = self._padded_crop(xn, yn["bboxes"][0], self.img_size, norm)
             s_y.append({
-                "bboxes": torch.tensor(yn["bboxes"]).squeeze(1),
+                "bboxes": torch.tensor([bbox]).squeeze(1),
                 "cls": yn["cls"][0]+1,
             })
-            xn = self._padded_crop(xn, yn["bboxes"][0], self.img_size)
             s_x.append(xn)
 
         self.s_x = torch.stack(s_x)
@@ -206,16 +218,31 @@ class FSLDataset(Dataset):
     def __getitem__(self, index: int):
 
         xi = self.data[index]
+        yi = dict()
         if self.transform_datapoints:
+            W, H = xi.size
             xi = self.transf(xi)
+        
+            if self.labels is not None:
+                yi["cls"] = self.labels[index]["cls"]
+                new_bboxes = []
+                w, h = xi.shape[2], xi.shape[1]
+                for bbox in self.labels[index]["bboxes"]:
+                    new_bboxes.append([
+                        bbox[0] * w / W,
+                        bbox[1] * h / H,
+                        bbox[2] * w / W,
+                        bbox[3] * h / H,
+                    ])
+                yi["bboxes"] = new_bboxes
 
         if not self.support_set:
             return xi
         
         if self.support_set_preproc:
 
-            if not self.labels is None:
-                return xi, self.labels[index], self.s_x, self.s_y
+            if not yi is None:
+                return xi, yi, self.s_x, self.s_y
 
             return xi, self.s_x, self.s_y
         
@@ -233,6 +260,9 @@ class FSLDataset(Dataset):
             case "detection_crop":
                 self.detection_crop()
 
+            case "norm_detection_crop":
+                self.detection_crop(True)
+
             case "resize_labels":
                 self.resize_labels()
 
@@ -242,8 +272,8 @@ class FSLDataset(Dataset):
             case _:
                 raise ValueError("Unsuported support_set_preprocessing_method configured!") 
             
-        if not self.labels is None:
-            return xi, self.labels[index], self.s_x, self.s_y
+        if yi is not None:
+            return xi, yi, self.s_x, self.s_y
 
         return xi, self.s_x, self.s_y
     

@@ -17,3 +17,6 @@ class AirShotConfig(BaseModel):
         default=0.5,
         description="lower bound of confidence for accepted proposals"
     )
+
+    support_shot: int = Field(default=5, description="Number of examples per class in the support set")
+    support_way: int = Field(default=5, description="Number of novel classes in the support set")
