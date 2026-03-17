@@ -1,8 +1,8 @@
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from fewpy.util.inference.FewShotModel import FewShotModel
-from fewpy.util.data.dataset import FSLDataset, fsl_collate
+from fewpy.inference import FewShotModel
+from fewpy.util.data import FSLDataset, fsl_collate
 from torch.utils.data import DataLoader
 import torch
 
@@ -90,14 +90,16 @@ ds = FSLDataset(
     s_y=support_ground_truth,
     img_size=600,
     max_size=1000,
-    pixel_norm=((103.530, 116.280, 123.675), (1.0, 1.0, 1.0))       # (mean, std)
+    pixel_norm=((103.530, 116.280, 123.675), (1.0, 1.0, 1.0)),       # (mean, std)
+    support_set_preprocessing_method="detection_crop",
 )
 
 dl = DataLoader(
     ds, 
     batch_size=1,
     shuffle=False,
-    collate_fn=fsl_collate      # Fewpy collate function
+    collate_fn=fsl_collate,      # Fewpy collate function
+    
 )
 
 """
@@ -107,13 +109,16 @@ classnames: list[str], name of each class in the dataset
 mapping_to_contiguous_ids: dict[int], id mapper in case dataset does not have contiguous ids
 
 confidence_threshold: float, lower bound of confidence for accepted proposals
+support_shot: int, Number of examples per class in the support set (in training mode)
+support_way: int, Number of novel classes in the support set (in training mode)
 """
 
 args = {
     "datasetname": 'voc_bottle_n_sofa',
     "classnames": ["bottle", "sofa"],
     "confidence_threshold": 0.5,
-    "mapping_to_contiguous_ids": {"bottle": 0, "sofa": 1}
+    "mapping_to_contiguous_ids": {"bottle": 0, "sofa": 1},
+    "support_shot": 5,
 }
 
 # config = AnomalyCLIPConfig(**args)

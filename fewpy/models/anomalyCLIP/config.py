@@ -8,6 +8,10 @@ class AnomalyCLIPConfig(BaseModel):
         default_factory=lambda: [6, 12, 18, 24],
         description="List of feature (scales) indices"
     )
+    feature_map_layer: list[int] = Field(
+        default_factory= lambda: [0, 1, 2, 3],
+        description="In training, filters which feature sets are used to calculate loss"
+    ) 
     image_size: int = Field(default=700)
     depth: int = Field(default=9)
     n_ctx: int = Field(default=12)

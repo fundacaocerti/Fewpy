@@ -1,5 +1,6 @@
 from fewpy.inference import Preprocessor, FewShotModel
-from fewpy.util.data import FSLDataset, fsl_collate
+from fewpy.util.data import FSLDataset
+from fewpy.util.loss import BinaryDiceLoss, FocalLoss
 from torch.utils.data import DataLoader
 
 import torch
@@ -7,12 +8,34 @@ import PIL
 import open_clip as clip
 
 from torchvision.transforms import ToPILImage, ToTensor
+from torch.optim import AdamW
 from pathlib import Path
+
+import torch.nn.functional as F
 
 
 # The following example uses the KolektorSDD dataset
+SUBSET_SIZE = 8
 MAX_SUBSETS = 2     # each subset contains 8 examples, therefore k = 16 for MAX_SUBSETS =  2
+DATASET_SIZE = 16
 IMG_SIZE = 448
+epochs = 5
+batch_size = 4
+learning_rate = 1e-5
+loss_focal = FocalLoss()
+loss_dice = BinaryDiceLoss()
+lam = 4
+
+def collate_fn(batch):
+    batch, labels, s_x, s_y = zip(*batch)
+    batch = torch.stack(batch)
+    labels = torch.stack(labels)
+
+    s_x = s_x[0]
+    s_y = s_y[0]
+
+    return batch, labels, s_x, s_y
+
 
 totensor = ToTensor()
 converter = ToPILImage()
@@ -22,46 +45,45 @@ root = Path("./KolektorSDD").expanduser()
 query_path = root / "kos50"
 
 query_images = []
+labels = []
 support_images = []
 support_ground_truth = []
 
 for i, subset in enumerate(root.iterdir()):
-    if subset.name == query_path.name:
-        continue
 
-    if i >= MAX_SUBSETS:
+    if i < MAX_SUBSETS:
+        support_images += [PIL.Image.open(img_path).convert("RGB") for img_path in subset.glob("*.jpg")]
+        support_ground_truth += [totensor(PIL.Image.open(img_path)) for img_path in subset.glob("*.bmp")]
+    elif i < (MAX_SUBSETS + DATASET_SIZE / SUBSET_SIZE):
+        query_images += [PIL.Image.open(img_path).convert("RGB") for img_path in subset.glob("*.jpg")]
+        labels += [totensor(PIL.Image.open(img_path)) for img_path in subset.glob("*.bmp")]
+    else:
         break
-    support_images += [PIL.Image.open(img_path).convert("RGB") for img_path in subset.glob("*.jpg")]
-    support_ground_truth += [totensor(PIL.Image.open(img_path)) for img_path in subset.glob("*.bmp")]
 
 # support_ground_truth = torch.stack(support_ground_truth).squeeze(1)
-query = list(query_path.glob("*.jpg"))
-query_images = [PIL.Image.open(img_path).convert("RGB") for img_path in query]
 W, H = query_images[0].size
-
-print("len query:", len(query_images))
 
 # initialize dataset
 ds = FSLDataset(
     x=query_images,
     s_x=support_images,
     s_y=support_ground_truth,
+    labels=labels,
     img_size=(IMG_SIZE, IMG_SIZE),
     pixel_norm=((0.485, 0.456, 0.0406), (0.229, 0.224, 0.225)),       # (mean, std)
-    support_set_preprocessing_method="resize_annotations",
+    support_set_preprocessing_method="resize_labels",
 )
 
 dl = DataLoader(
     ds, 
-    batch_size=8,
+    batch_size=batch_size,
     shuffle=False,
-    collate_fn=fsl_collate,      # Fewpy collate function
+    collate_fn=collate_fn,      # Fewpy collate function
 )
 
 # expects H == W
 """
 feature_list: list[int], A list of feature (for scaling) indices, default=[6, 12, 18, 24]
-feature_map_layer: list[int], In training, filters which feature sets are used to calculate loss
 image_size: int, default=700 (700x700)
 depth: int, Depth of ViT, default=9
 n_ctx: int, Number of context tokens, default=12
@@ -103,6 +125,14 @@ model = FewShotModel(
     ]
 )
 
+# freezing the backbone
+# for param in model.model.backbone.parameters():
+#     param.requires_grad = False
+    
+params = [p for p in model.parameters() if p.requires_grad]
+
+optimizer = AdamW(params, lr=learning_rate)
+
 """
 AnomalyCLIP.predict:
 Args:
@@ -121,24 +151,42 @@ Returns:
             The dict contains a string "segmentation" under the key "task" to specify the task type,
             a "data" mask, Tensor of format (H, W) and a "postproc_data" mask, Tensor of format (H, W)
 """
-result = []
-for batch, s_x, s_y in dl:
-    print(f"shapes: batch = {batch.shape}, s_x = {s_x.shape}, s_y = {s_y.shape}")
-    result += model.predict(
-        x=batch,
-        s_x=s_x,
-        s_y=s_y,
-        user_prompts=["crack", "fissure"]
-    )
+total_loss = 0
+for epoch in range(epochs):
+    print(f"\nEpoch {epoch + 1}/{epochs}")
+    model.train()
 
-# saving the masks as images
-for i, yi in enumerate(result):
-    print(f"example: {query[i]}")
-    mask = yi["raw_data"]
-    mask = converter(mask)
-    mask = mask.resize((W, H), resample=PIL.Image.NEAREST)
-    mask.save(f"output{i}.png")
-    postproc_mask = yi["data"]
-    postproc_mask = converter(postproc_mask)
-    postproc_mask = postproc_mask.resize((W, H), resample=PIL.Image.NEAREST)
-    postproc_mask.save(f"output{i}_alt.png")
+    epoch_loss = 0
+    for batch, labels, s_x, s_y in dl:
+        
+        batch = batch.to(model.device)
+        optimizer.zero_grad()
+
+        sim_map_list, text_probs = model.predict(
+            x=batch,
+            s_x=s_x, 
+            s_y=s_y,
+            user_prompts=["crack", "fissure"],
+        )
+
+        image_level_label = (labels.view(labels.size(0), -1).sum(dim=1) > 0).long()
+        image_loss = F.cross_entropy(text_probs.view(-1, 2), image_level_label)
+        # image_loss = F.cross_entropy(text_probs.squeeze(), labels.long().to(model.device))
+        loss = 0
+        for i in range(len(sim_map_list)):
+            loss += loss_focal(sim_map_list[i], labels)
+            loss += loss_dice(sim_map_list[i][:, 1, :, :], labels)
+            loss += loss_dice(sim_map_list[i][:, 0, :, :], 1-labels)
+
+        loss = lam * loss
+        (loss + image_loss).backward()
+        total_loss += loss.item()
+
+        optimizer.step()
+        print(f"  Loss: {loss:.4f}")
+
+    avg_loss = total_loss / len(dl)
+    print(f"Average Loss for Epoch {epoch + 1}: {avg_loss / epochs:.4f}")
+
+print("\nFine-tuning complete!")
+torch.save(model.state_dict(), "anomaly_clip.pth")

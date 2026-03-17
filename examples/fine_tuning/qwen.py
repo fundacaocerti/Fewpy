@@ -3,25 +3,33 @@ from fewpy.util.data import FSLDataset
 from torch.utils.data import DataLoader
 
 from pathlib import Path
-import xml.etree.ElementTree as ET
 
+from torch.optim import AdamW
+import torch.nn.functional as F
 import torch
+
+import xml.etree.ElementTree as ET
 
 from PIL import Image
 import numpy as np
+import json
 
 
 def qwen_collate(batch):
     return batch
 
 # prepare support and query data 
-K = 5
-n = 1
+K = 1
+n = 8
 CLASSES = ("bottle", "sofa")
+epochs = 5
+batch_size = 4
+learning_rate = 1e-5
 
 dataset = Path("./testdata2").expanduser()
 annotations = dataset / "selected_annot" 
 images = dataset / "selected_img"
+print(dataset)
 
 counter = {cls: 0 for cls in CLASSES}
 
@@ -98,37 +106,59 @@ dl = DataLoader(
 
 args = {
     "classnames": ["bottle", "sofa"],
+    "lora": True,
+    "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    "lora_dropout": 0.05,
+    "lora_alpha": 32,
+    "lora_rank": 16,
+    "lora_bias": "none",
+    "gradient_checkpointing": True,
+    "quantization": True,
+    "compute_dtype": "bfloat16",
+    "max_pixels": 512 * 512,
+    "min_pixels": 224 * 224,
 }
 
 model = FewShotModel(
     model="Qwen",
     config=args
 )
+    
+params = [p for p in model.parameters() if p.requires_grad]
 
-"""
-        self.model.forward:
-        Args:
-            x: a list of Image objects, the batched query.
-            s_x: a list of Image objects, the support images.
-            s_y: a list of dictionaries containing the gorund truth for each of the support images.
-        Returns:
-            list[list[dict]]:
-                Each list[dict] is a list of detections from a single image
-                Each dict is the output of one detection from a single image.
-                The dict contains the following keys:
-                key "task" that specifies the task the model is trained on (always "detection")
-"""
-results = []
-for batch in dl:
-    results += model.predict(
-        x=batch,
-        s_x=support_images,
-        s_y=support_ground_truth,
-    )
+optimizer = AdamW(params, lr=learning_rate)
 
-print(results)
+for epoch in range(epochs):
+    """
+            self.model.forward:
+            Args:
+                x: a list of Image objects, the batched query.
+                s_x: a list of Image objects, the support images.
+                s_y: a list of dictionaries containing the gorund truth for each of the support images.
+            Returns:
+                list[list[dict]]:
+                    Each list[dict] is a list of detections from a single image
+                    Each dict is the output of one detection from a single image.
+                    The dict contains the following keys:
+                    key "task" that specifies the task the model is trained on (always "detection")
+    """
+    model.train()
+    total_loss = 0
+    for batch in dl:
+        optimizer.zero_grad()
+        loss = model.predict(
+            x=batch,
+            s_x=support_images,
+            s_y=support_ground_truth,
+        )
 
-for i, image_results in enumerate(results):
-    print(f"Image {i+1} detections:")
-    for detection in image_results:
-        print(f"confidence: {detection["conf"]}\nbbox: {detection["data"]}")
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+
+        print(f"Epoch {epoch} | Loss: {loss.item():.4f}")
+    avg_loss = total_loss / len(dl)
+    print(f"Average Loss for Epoch {epoch + 1}: {avg_loss / epochs:.4f}")
+
+print("\nFine-tuning complete!")
+torch.save(model.state_dict(), "qwen.pth")

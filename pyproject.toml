@@ -51,6 +51,8 @@ dependencies = [
     "accelerate>=1.12.0",
     "supervision>=0.27.0",
     "dropblock>=0.3.0",
+    "peft>=0.18.1",
+    "bitsandbytes>=0.49.2",
 ]
 
 [dependency-groups]

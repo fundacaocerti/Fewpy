@@ -1,9 +1,36 @@
 from torch import Tensor
 from inspect import signature, Parameter
 
-from fewpy.util.inference.preprocessor import Preprocessor
-from fewpy.util.inference.register import REGISTRY, CONFIG, CONSTRUCTOR
+from pydantic import BaseModel, Field, PrivateAttr
+from typing import Callable, List, Dict, Any
+
+from fewpy.models.register import REGISTRY, CONFIG, CONSTRUCTOR
 import fewpy.models
+
+
+class Preprocessor(BaseModel):
+
+    input_keys: List[str] = Field(..., description="List of keys in the context dictionary required as input.")
+    output_key: str = Field(..., description="The key to store the function's output in the context dictionary.")
+    
+    description: str = Field("", description="A brief description of this pre-processing step.")
+    kwargs: Dict[str, Any] = Field(default_factory=dict, description="Keyword arguments passed to the function.")
+
+    _function: Callable = PrivateAttr()
+    is_tokenizer: bool = Field(default=False)
+
+    def __init__(self, function: Callable, **data):
+        super().__init__(**data)
+        if not callable(function):
+            raise TypeError("The 'function' provided must be a callable object (e.g., a function or method).")
+        self._function = function
+
+    @property
+    def function(self) -> Callable:
+        return self._function
+        
+    class Config:
+        arbitrary_types_allowed = True
 
 
 class FewShotModel:
@@ -31,6 +58,30 @@ class FewShotModel:
     def get_model_in_features(self):
 
         return self.params
+    
+    def train(self):
+
+        self.model.train()
+
+    def eval(self):
+
+        self.model.eval()
+
+    def parameters(self):
+
+        return self.model.parameters()
+
+    def named_parameters(self):
+
+        return self.model.named_parameters()
+    
+    def state_dict(self):
+
+        return self.model.state_dict()
+    
+    def __str__(self):
+
+        return str(self.model)
 
     def predict(self, **kwargs) -> Tensor:
         
@@ -70,4 +121,3 @@ class FewShotModel:
             self.preprocessors += preprocessor
         elif isinstance(preprocessor, Preprocessor):
             self.preprocessors.append(preprocessor)
-        
