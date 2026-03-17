@@ -90,14 +90,16 @@ ds = FSLDataset(
     s_y=support_ground_truth,
     img_size=600,
     max_size=1000,
-    pixel_norm=((103.530, 116.280, 123.675), (1.0, 1.0, 1.0))       # (mean, std)
+    pixel_norm=((103.530, 116.280, 123.675), (1.0, 1.0, 1.0)),       # (mean, std)
+    support_set_preprocessing_method="detection_crop",
 )
 
 dl = DataLoader(
     ds, 
     batch_size=1,
     shuffle=False,
-    collate_fn=fsl_collate      # Fewpy collate function
+    collate_fn=fsl_collate,      # Fewpy collate function
+    
 )
 
 """

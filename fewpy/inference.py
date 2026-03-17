@@ -70,6 +70,10 @@ class FewShotModel:
     def parameters(self):
 
         return self.model.parameters()
+
+    def named_parameters(self):
+
+        return self.model.named_parameters()
     
     def state_dict(self):
 

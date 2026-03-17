@@ -115,15 +115,40 @@ class FSLDataset(Dataset):
         
             return support_patch, bbox
     
+    def _rescale_bboxes(self, img, bboxes=None):
+
+        if bboxes is not None:
+            new_bboxes = []
+            for bbox in bboxes:
+                new_bboxes.append([
+                    bbox[0] * ratio_w,
+                    bbox[1] * ratio_h,
+                    bbox[2] * ratio_w,
+                    bbox[3] * ratio_h,
+                ])
+        
+        return bboxes
+    
     def transform_s_x(self):
 
         self._check_support_set()
 
         s_x = []
-        for img in self.s_x:
-            if isinstance(img, Image):
-                img = self.transf(img)
-            s_x.append(img)
+        if "bboxes" in self._s_y.keys():
+            s_y = []
+            for img, gt in zip(self.s_x, self.s_y):
+                w, h = img.size
+                xi = self.transf(img)
+                ratio_h, ratio_w = xi.shape[-2] / h, xi.shape[-1] / w
+                img, bboxes = self._rescale_bboxes(ratio_h, ratio_w, gt["bbox"])
+                new_gt = {k: gt[k] for k in gt.keys()}
+                new_gt["bboxes"] = bboxes
+                s_y.append(new_gt)
+            self.s_y = s_y
+        else:
+            for img in self.s_x:
+                img = self._transform(img)
+                s_x.append(img)
 
         self._stack_sx(s_x)
 
@@ -220,21 +245,13 @@ class FSLDataset(Dataset):
         xi = self.data[index]
         yi = dict()
         if self.transform_datapoints:
-            W, H = xi.size
+            w, h = xi.size
             xi = self.transf(xi)
-        
             if self.labels is not None:
-                yi["cls"] = self.labels[index]["cls"]
-                new_bboxes = []
-                w, h = xi.shape[2], xi.shape[1]
-                for bbox in self.labels[index]["bboxes"]:
-                    new_bboxes.append([
-                        bbox[0] * w / W,
-                        bbox[1] * h / H,
-                        bbox[2] * w / W,
-                        bbox[3] * h / H,
-                    ])
-                yi["bboxes"] = new_bboxes
+                yi = {k: self.labels[index] for k in self.labels[index].keys()}
+                ratio_h, ratio_w = xi.shape[-2] / h, xi.shape[-1] / w
+                bboxes = self._rescale_bboxes(ratio_h, ratio_w, bboxes=yi["bboxes"])
+                yi["bboxes"] = bboxes
 
         if not self.support_set:
             return xi
@@ -279,10 +296,19 @@ class FSLDataset(Dataset):
     
 
 def fsl_collate(batch):
+    has_query_labels = len(batch[0]) == 4
 
-    batch, s_x, s_y = zip(*batch)
-    batch = torch.stack(batch)
-    s_x = s_x[0]
-    s_y = s_y[0]
-
-    return batch, s_x, s_y
+    if has_query_labels:
+        xi, yi, s_x, s_y = zip(*batch)
+    
+        batch_xi = torch.stack(xi)
+        batch_yi = list(yi)
+    
+        return batch_xi, batch_yi, s_x[0], s_y[0]
+        
+    else:
+        xi, s_x, s_y = zip(*batch)
+        
+        batch_xi = torch.stack(xi)
+        
+        return batch_xi, s_x[0], s_y[0]

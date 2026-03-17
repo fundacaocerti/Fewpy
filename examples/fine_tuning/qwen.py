@@ -3,22 +3,24 @@ from fewpy.util.data import FSLDataset
 from torch.utils.data import DataLoader
 
 from pathlib import Path
-import xml.etree.ElementTree as ET
 
 from torch.optim import AdamW
 import torch.nn.functional as F
 import torch
 
+import xml.etree.ElementTree as ET
+
 from PIL import Image
 import numpy as np
+import json
 
 
 def qwen_collate(batch):
     return batch
 
 # prepare support and query data 
-K = 5
-n = 1
+K = 1
+n = 8
 CLASSES = ("bottle", "sofa")
 epochs = 5
 batch_size = 4
@@ -27,6 +29,7 @@ learning_rate = 1e-5
 dataset = Path("./testdata2").expanduser()
 annotations = dataset / "selected_annot" 
 images = dataset / "selected_img"
+print(dataset)
 
 counter = {cls: 0 for cls in CLASSES}
 
@@ -103,18 +106,29 @@ dl = DataLoader(
 
 args = {
     "classnames": ["bottle", "sofa"],
+    "lora": True,
+    "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    "lora_dropout": 0.05,
+    "lora_alpha": 32,
+    "lora_rank": 16,
+    "lora_bias": "none",
+    "gradient_checkpointing": True,
+    "quantization": True,
+    "compute_dtype": "bfloat16",
+    "max_pixels": 512 * 512,
+    "min_pixels": 224 * 224,
 }
 
 model = FewShotModel(
     model="Qwen",
     config=args
 )
-
+    
 params = [p for p in model.parameters() if p.requires_grad]
 
 optimizer = AdamW(params, lr=learning_rate)
 
-for epoch in epochs:
+for epoch in range(epochs):
     """
             self.model.forward:
             Args:
@@ -128,9 +142,10 @@ for epoch in epochs:
                     The dict contains the following keys:
                     key "task" that specifies the task the model is trained on (always "detection")
     """
-    optimizer.zero_grad()
+    model.train()
     total_loss = 0
     for batch in dl:
+        optimizer.zero_grad()
         loss = model.predict(
             x=batch,
             s_x=support_images,

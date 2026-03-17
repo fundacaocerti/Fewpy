@@ -20,49 +20,62 @@ Fewpy makes it easy to load and run highly performant models on benchmarks to ex
 
 ## FSLDataset
 
-`FSLDataset` is a PyTorch-compatible dataset for Few-Shot Learning. It handles a **Query Set** (input data) and a **Support Set** (reference data). It uses **Lazy Processing** to transform the support set only once when the first item is accessed.
+`FSLDataset` is a PyTorch-compatible dataset for Few-Shot Learning (FSL). It manages a **Query Set** (input data) and a **Support Set** (reference data). It features **Lazy Processing**, which triggers the transformation of the support set only once when the first item is accessed, based on a specific preprocessing strategy.
 
 ### Class: FSLDataset
 
 #### Initialization Parameters
 * **x**: (list[Image]) Query images.
 * **s_x**: (list[Image]) Support images.
-* **s_y**: (list/Tensor) Support labels or bounding box dicts.
-* **img_size**: (tuple) Target (H, W).
-* **max_size**: (int) Max edge length for resizing.
+* **s_y**: (list/Tensor) Support labels, masks, or bounding box dictionaries.
+* **labels**: (list[dict]) Optional annotations (bboxes/classes) for the query images.
+* **img_size**: (tuple/int) Target (H, W) for resizing.
+* **max_size**: (int) Optional maximum edge length constraint for resizing.
 * **pixel_norm**: (tuple) Mean and Std for normalization.
-* **norm_annot**: (bool) If True, scales bboxes to [0, 1].
-* **resize_annot**: (bool) If True, resizes mask tensors to img_size.
-* **transform_datapoints**: (bool) If True, applies transforms to Query images.
+* **support_set_preprocessing_method**: (str) Strategy for support set transformation. Options include:
+    * `"standard"`: Basic transform and stacking.
+    * `"resize_annotations"`: Resizes images and mask-style `s_y`.
+    * `"normalize_annotations"`: Scales `s_y` bboxes to [0, 1].
+    * `"detection_crop"`: Crops `s_x` around `s_y` bboxes with padding.
+    * `"norm_detection_crop"`: Padded crop with pixel normalization.
+    * `"resize_labels"`: Resizes both support annotations and query labels.
+    * `"none"`: Skips preprocessing.
+* **transform_datapoints**: (bool) If True, applies the transform pipeline to Query images and scales their associated `labels`.
 
 #### Key Logic
-1. **Transform Pipeline**: Combines Resize, ToTensor, and Normalize based on input parameters.
+1. **Transform Pipeline**: A `torchvision.transforms.Compose` pipeline is built using `Resize`, `ToTensor`, and `Normalize` based on initialization arguments.
 2. **Lazy Support Set Preprocessing**:
-   - On the first `__getitem__` call, `s_x` and `s_y` are processed.
-   - Images are transformed and stacked into a 4D tensor if shapes match.
-   - Bounding boxes are normalized if `norm_annot` is True (requires "bboxes" key).
-   - Masks are resized using Nearest Neighbor if `resize_annot` is True.
-3. **Caching**: Once processed, `self.support_set_preproc` is set to True to bypass reprocessing for subsequent indices.
+   - On the first `__getitem__` call, the dataset executes a specific method determined by `support_set_preprocessing_method`.
+   - **Stacking**: Images are stacked into a 4D tensor if shapes are uniform; otherwise, they remain a list of tensors.
+   - **Detection Cropping**: Uses `_padded_crop` to zoom into support objects with a 0.5 padding ratio before resizing.
+3. **Query Label Scaling**: If `transform_datapoints` is enabled and `labels` are provided, bounding boxes for query images are automatically rescaled to match the new `img_size`.
+4. **Caching**: Once processed, `self.support_set_preproc` is set to True to bypass reprocessing for subsequent indices.
 
 #### Utility: fsl_collate
-Standard collators stack every element. In Few-Shot Learning, the support set is usually identical for every query in a batch. `fsl_collate` prevents memory bloat by:
-- Stacking Query images (`x`) into a batch tensor.
-- Returning only the **first** instance of the support set (`s_x`, `s_y`) for the entire batch.
+Standard collators stack every element, which can lead to redundant memory usage in FSL because the support set is usually identical for every query in a batch. `fsl_collate` optimizes this by:
+- Stacking Query images (`x`) and their labels (`yi`) into a batch.
+- Returning only the **first** instance of the processed support set (`s_x`, `s_y`) for the entire batch.
 
 ### Usage Example
 
 ```python
 from torch.utils.data import DataLoader
 
-# initialize
-ds = FSLDataset(x=q_imgs, s_x=s_imgs, s_y=s_annots, img_size=(224, 224))
+# Initialize with detection-based cropping for the support set
+ds = FSLDataset(
+    x=q_imgs, 
+    s_x=s_imgs, 
+    s_y=s_annots, 
+    img_size=(320, 320),
+    support_set_preprocessing_method="detection_crop"
+)
 
-# use custom collate
+# Use custom collate to prevent support set duplication in memory
 loader = DataLoader(ds, batch_size=4, collate_fn=fsl_collate)
 
 for queries, support_x, support_y in loader:
-    # queries: [Batch, C, H, W]
-    # support_x: [Support_Size, C, H, W]
+    # queries: [Batch, C, 320, 320]
+    # support_x: [Support_Size, C, 320, 320] (Processed/Cropped)
     pass
 ```
 
