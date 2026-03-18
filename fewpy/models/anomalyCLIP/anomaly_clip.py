@@ -237,11 +237,11 @@ class AnomalyCLIP(nn.Module):
     
     def parameters(self, recurse=True):
 
-        return self.prompt_learner.parameters(recurse)
+        yield from self.prompt_learner.parameters(recurse)
     
     def named_parameters(self, prefix = "", recurse = True, remove_duplicate = True):
         
-        return self.prompt_learner.named_parameters(prefix, recurse, remove_duplicate)
+        yield from self.prompt_learner.named_parameters(prefix, recurse, remove_duplicate)
 
     def predict(self,
                 x: torch.Tensor,

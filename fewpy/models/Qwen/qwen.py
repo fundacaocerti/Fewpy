@@ -39,11 +39,11 @@ class QwenWrapper:
 
     def parameters(self, recurse=True):
 
-        return self.model.parameters(recurse)
+        yield from self.model.parameters(recurse)
 
     def named_parameters(self, prefix="", recurse=True, remove_duplicate=True):
 
-        return self.model.named_parameters(prefix, recurse, remove_duplicate)
+        yield from self.model.named_parameters(prefix, recurse, remove_duplicate)
 
     def predict(self, x: List[PIL.Image], s_x: List[PIL.Image]=None, s_y: List[Dict]=None, single_cls: str=None):
 
