@@ -235,9 +235,13 @@ class AnomalyCLIP(nn.Module):
 
         return self
     
-    def parameters(self):
+    def parameters(self, recurse=True):
 
-        return self.prompt_learner.parameters()
+        return self.prompt_learner.parameters(recurse)
+    
+    def named_parameters(self, prefix = "", recurse = True, remove_duplicate = True):
+        
+        return self.prompt_learner.named_parameters(prefix, recurse, remove_duplicate)
 
     def predict(self,
                 x: torch.Tensor,
@@ -446,7 +450,6 @@ class contructor_AnomalyCLIP:
         checkpoint_path = model_path.parent / "anomaly_clip.pth"
         if not checkpoint_path.exists():
             checkpoint_path = None
-        
         
         model = torch.jit.load(model_path, map_location=device)
         state_dict = model.state_dict()
