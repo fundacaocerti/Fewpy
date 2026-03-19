@@ -2,7 +2,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 from fewpy.inference import FewShotModel
-from fewpy.util.data import FSLDataset, fsl_collate
+from fewpy.util.data import FSLDataset, PreprocessingMethod, fsl_collate
 from torch.utils.data import DataLoader
 import torch
 
@@ -91,7 +91,7 @@ ds = FSLDataset(
     img_size=600,
     max_size=1000,
     pixel_norm=((103.530, 116.280, 123.675), (1.0, 1.0, 1.0)),       # (mean, std)
-    support_set_preprocessing_method="detection_crop",
+    support_set_preprocessing_method=PreprocessingMethod.DETECTION_CROP,
 )
 
 dl = DataLoader(

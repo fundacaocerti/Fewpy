@@ -4,6 +4,7 @@ from PIL.Image import Image
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms as T
 import torchvision.transforms.functional as F
+from enum import Enum
 
 
 def d2_tensor_transform(image):
@@ -11,6 +12,19 @@ def d2_tensor_transform(image):
         image = np.array(image)
     
     return torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
+
+
+class PreprocessingMethod(Enum):
+
+    NONE = "none"
+    STANDARD = "standard"
+    NORMALIZE_ANNOTATIONS = "normalize_annotations"
+    RESIZE_SUPPORT_GT = "resize_support_gt"
+    DETECTION_CROP = "detection_crop"
+    NORM_DETECTION_CROP = "norm_detection_crop"
+    RESIZE_LABELS = "resize_labels"
+    AUGMENT_SUPPORT_IMAGES = "augment_support_images"
+
 
 class FSLDataset(Dataset):
 
@@ -21,19 +35,30 @@ class FSLDataset(Dataset):
                  labels: list[dict]=None,
                  img_size: tuple[int] | int=None,
                  max_size: int=None,
+                 antialias: bool=True,
+                 interpolation: str=T.InterpolationMode.BICUBIC,
                  pixel_norm: tuple=None,
+                 center_crop: int=None,
                  support_set_preprocessing_method: str="standard",
                  transform_datapoints: bool=True,
+                 **kwargs
             ) -> None:
         super().__init__()
 
         # set transform composition that turns pillow image objects into datapoints compatible with the library
         transfs = []
         if img_size is not None:
-            if max_size is not None:
-                transfs.append(T.Resize(size=img_size, max_size=max_size))
-            else:
-                transfs.append(T.Resize(img_size))
+            transfs.append(
+                T.Resize(
+                    size=img_size, 
+                    max_size=max_size, 
+                    antialias=antialias,
+                    interpolation=interpolation
+                    )
+                )
+
+        if center_crop is not None:
+            transfs.append(T.CenterCrop(center_crop))
  
         transfs.append(T.ToTensor())
         if pixel_norm is not None:
@@ -53,23 +78,27 @@ class FSLDataset(Dataset):
 
         match self.method:
 
-            case "standard":
+            case PreprocessingMethod.STANDARD:
                 self.transform_s_x()
 
-            case "resize_annotations":
-                self.resize_annotations()
+            case PreprocessingMethod.RESIZE_SUPPORT_GT:
+                self.resize_support_gt()
 
-            case "normalize_annotations":
+            case PreprocessingMethod.NORMALIZE_ANNOTATIONS:
                 self.normalize_annotations()
 
-            case "detection_crop":
+            case PreprocessingMethod.DETECTION_CROP:
                 self.detection_crop()
 
-            case "norm_detection_crop":
+            case PreprocessingMethod.NORM_DETECTION_CROP:
                 self.detection_crop(True)
 
-            case "resize_labels":
+            case PreprocessingMethod.RESIZE_LABELS:
                 self.resize_labels()
+
+            case PreprocessingMethod.AUGMENT_SUPPORT_IMAGES:
+                epochs = kwargs["epochs"] if "epochs" in kwargs else 4
+                self.augment_support_images(epochs)
 
             case "none":
                 pass
@@ -169,7 +198,7 @@ class FSLDataset(Dataset):
         self._stack_sx(s_x)
         self.s_y = s_y
 
-    def resize_annotations(self):
+    def resize_support_gt(self):
 
         if self.img_size is None:
             raise ValueError("Support Set cannot be resized if img_size is None!")
@@ -253,6 +282,23 @@ class FSLDataset(Dataset):
 
         self.s_x = torch.stack(s_x)
         self.s_y = s_y
+
+    def augment_support_images(self, epochs):
+
+        _transform = T.Compose([
+            T.RandomResizedCrop(size=224, scale=(0.5, 1), interpolation=T.InterpolationMode.BICUBIC),
+            T.RandomHorizontalFlip(p=0.5),
+            T.ToTensor(),
+            T.Normalize(mean=(0.48145466, 0.4578275, 0.40821073), std=(0.26862954, 0.26130258, 0.27577711))
+        ])
+
+        augmented_set = []
+        for _ in range(epochs):
+            for img in self.s_x:
+                augmented_set.append(_transform(img))
+
+        self.s_x = torch.stack(augmented_set)
+        self.s_y = torch.stack(self.s_y)
     
     def __getitem__(self, index: int):
 

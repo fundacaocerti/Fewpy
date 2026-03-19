@@ -1,5 +1,5 @@
 from fewpy.inference import Preprocessor, FewShotModel
-from fewpy.util.data import FSLDataset
+from fewpy.util.data import FSLDataset, PreprocessingMethod
 from fewpy.util.loss import BinaryDiceLoss, FocalLoss
 from torch.utils.data import DataLoader
 
@@ -71,7 +71,7 @@ ds = FSLDataset(
     labels=labels,
     img_size=(IMG_SIZE, IMG_SIZE),
     pixel_norm=((0.485, 0.456, 0.0406), (0.229, 0.224, 0.225)),       # (mean, std)
-    support_set_preprocessing_method="resize_labels",
+    support_set_preprocessing_method=PreprocessingMethod.RESIZE_SUPPORT_GT,
 )
 
 dl = DataLoader(

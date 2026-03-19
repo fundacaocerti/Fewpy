@@ -1,5 +1,5 @@
 from fewpy.inference import FewShotModel
-from fewpy.util.data import FSLDataset
+from fewpy.util.data import FSLDataset, PreprocessingMethod
 
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
@@ -127,7 +127,7 @@ ds = FSLDataset(
     img_size=600,
     max_size=1000,
     pixel_norm=((103.530, 116.280, 123.675), (1.0, 1.0, 1.0)),       # (mean, std)
-    support_set_preprocessing_method="detection_crop",
+    support_set_preprocessing_method=PreprocessingMethod.DETECTION_CROP,
 )
 
 dl = DataLoader(

@@ -1,5 +1,5 @@
 from fewpy.inference import Preprocessor, FewShotModel
-from fewpy.util.data import FSLDataset, fsl_collate
+from fewpy.util.data import FSLDataset, PreprocessingMethod, fsl_collate
 from torch.utils.data import DataLoader
 
 import torch
@@ -48,7 +48,7 @@ ds = FSLDataset(
     s_y=support_ground_truth,
     img_size=(IMG_SIZE, IMG_SIZE),
     pixel_norm=((0.485, 0.456, 0.0406), (0.229, 0.224, 0.225)),       # (mean, std)
-    support_set_preprocessing_method="resize_annotations",
+    support_set_preprocessing_method=PreprocessingMethod.RESIZE_SUPPORT_GT,
 )
 
 dl = DataLoader(
