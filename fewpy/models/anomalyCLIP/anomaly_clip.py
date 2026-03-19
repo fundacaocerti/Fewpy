@@ -62,7 +62,7 @@ class AnomalyCLIP(nn.Module):
         design_details=None
     ):
         
-        super().__init__()
+        super(AnomalyCLIP, self).__init__()
 
         self.config = config if config is not None else AnomalyCLIPConfig()
         self.context_length = context_length
@@ -223,7 +223,7 @@ class AnomalyCLIP(nn.Module):
         logits_per_text = logits_per_image.t()
 
         
-        # return logits_per_image, logits_per_text
+        return logits_per_image, logits_per_text
 
     def train(self, mode: bool=True):
         super().train(mode)
