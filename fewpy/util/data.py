@@ -32,14 +32,14 @@ class FSLDataset(Dataset):
                  x: list[Image],
                  s_x: list[Image]=None,
                  s_y: list[dict] | list[torch.Tensor]=None,
-                 labels: list[dict]=None,
+                 labels: list[dict] | list[torch.Tensor]=None,
                  img_size: tuple[int] | int=None,
                  max_size: int=None,
                  antialias: bool=True,
                  interpolation: str=T.InterpolationMode.BICUBIC,
                  pixel_norm: tuple=None,
                  center_crop: int=None,
-                 support_set_preprocessing_method: str="standard",
+                 support_set_preprocessing_method: PreprocessingMethod=PreprocessingMethod.STANDARD,
                  transform_datapoints: bool=True,
                  **kwargs
             ) -> None:
@@ -72,7 +72,7 @@ class FSLDataset(Dataset):
         self.s_y = s_y
         self.transform_datapoints = transform_datapoints
         self.img_size = img_size
-        self.method = support_set_preprocessing_method.lower()
+        self.method = support_set_preprocessing_method
         self.labels = labels
         self.pixel_norm = pixel_norm
 
@@ -215,6 +215,7 @@ class FSLDataset(Dataset):
                 ))
             self.s_y = torch.stack(new_s_y).squeeze(1)
 
+    # TODO - double check resizing strategy
     def resize_labels(self):
 
         self.resize_annotations()
@@ -302,11 +303,14 @@ class FSLDataset(Dataset):
     
     def __getitem__(self, index: int):
 
+
         xi = self.data[index]
-        yi = dict()
+        yi = None
         if self.transform_datapoints:
             if self.labels is not None:
                 xi, yi = self._transform(xi, self.labels[index])
+            else:
+                xi = self.transf(xi)
 
         if not self.support_set:
             return xi

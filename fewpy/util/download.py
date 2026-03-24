@@ -23,7 +23,8 @@ model2url = {
 def download(
     model: str,
     cache_dir: Union[str, None] = None,
-):
+    new_name: str="",
+): 
     
     url = model2url[model]
 
@@ -32,6 +33,7 @@ def download(
         cache_dir = current_dir / "weights"
     else:
         cache_dir = Path(cache_dir)
+    
     cache_dir.mkdir(parents=True, exist_ok=True)
     filename = Path(url).name
 
@@ -88,5 +90,8 @@ def download(
         raise RuntimeError(
             "Model has been downloaded but the SHA256 checksum does not not match"
         )
+    
+    if new_name != "":
+        download_target = download_target.rename(f"{download_target.parent / new_name}{download_target.suffix}")
 
     return str(download_target)
