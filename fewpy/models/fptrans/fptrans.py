@@ -163,11 +163,10 @@ class FPTRANS(nn.Module):
         if not out_shape:
             out_shape = y.shape[-2:] if y is not None else (H, W)
         out = interpb(pred, out_shape)    # [BQ, 2, *, *]
-        #output = dict(out=out)
-        
-        """ 
+
         if self.args.training and y is not None:
             # Pairwise loss
+            output = dict(out=out)
             x1 = sup_fts.flatten(3)                # [B, S, C, N]
             y1 = sup_mask0.view(B, S, -1).long()     # [B, S, N] # maybe need clone
             x2 = qry_fts.flatten(3)                 # [B, 1, C, N]
@@ -188,8 +187,6 @@ class FPTRANS(nn.Module):
 
             return output
             
-        else:
-        """
         if self.Probs_return:
             return out #[bsz, 2, H, W] 
         else:
@@ -331,46 +328,6 @@ class FPTRANS(nn.Module):
         pred = torch.stack((bg_distance, fg_distance), dim=1)               # [B, 2, h, w]
 
         return pred
-    '''
-    def load_weights(self, ckpt_path, device):
-        """
-
-        Parameters
-        ----------
-        ckpt_path: Path
-            path to the checkpoint
-        strict: bool
-            strict mode or not
-
-        """
-        weights = torch.load(ckpt_path, map_location=device)
-        if "model_state" in weights:
-            weights = weights["model_state"]
-        if "state_dict" in weights:
-            weights = weights["state_dict"]
-        weights = {k.replace("module.", ""): v for k, v in weights.items()}
-        weights.update({k: v for k, v in self.state_dict().items() if 'original_encoder' in k})
-        self.load_state_dict(weights) 
-    '''       
-
-    ''' 
-    @staticmethod
-    def get_or_download_pretrained(backbone, progress):
-        if backbone not in pretrained_weights:
-            raise ValueError(f'Not supported backbone {backbone}. '
-                             f'Available backbones: {list(pretrained_weights.keys())}')
-
-        cached_file = Path(pretrained_weights[backbone])
-        if cached_file.exists():
-            return cached_file
-
-        # Try to download
-        url = model_urls[backbone]
-        cached_file.parent.mkdir(parents=True, exist_ok=True)
-        sys.stderr.write('Downloading: "{}" to {}\n'.format(url, cached_file))
-        download_url_to_file(url, str(cached_file), progress=progress)
-        return cached_file
-    '''
 
     def get_params_list(self):
         params = []
