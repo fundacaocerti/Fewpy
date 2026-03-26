@@ -18,11 +18,10 @@ class PreprocessingMethod(Enum):
 
     NONE = "none"
     STANDARD = "standard"
-    NORMALIZE_ANNOTATIONS = "normalize_annotations"
+    NORMALIZE_SUPPORT_GT = "normalize_support_gt"
     RESIZE_SUPPORT_GT = "resize_support_gt"
     DETECTION_CROP = "detection_crop"
     NORM_DETECTION_CROP = "norm_detection_crop"
-    RESIZE_LABELS = "resize_labels"
     AUGMENT_SUPPORT_IMAGES = "augment_support_images"
 
 
@@ -36,7 +35,7 @@ class FSLDataset(Dataset):
                  img_size: tuple[int] | int=None,
                  max_size: int=None,
                  antialias: bool=True,
-                 interpolation: str=T.InterpolationMode.BICUBIC,
+                 interpolation: T.InterpolationMode=T.InterpolationMode.BICUBIC,
                  pixel_norm: tuple=None,
                  center_crop: int=None,
                  support_set_preprocessing_method: PreprocessingMethod=PreprocessingMethod.STANDARD,
@@ -57,7 +56,7 @@ class FSLDataset(Dataset):
                     )
                 )
 
-        if center_crop is not None:
+        if center_crop is not None and center_crop != 0:
             transfs.append(T.CenterCrop(center_crop))
  
         transfs.append(T.ToTensor())
@@ -76,6 +75,9 @@ class FSLDataset(Dataset):
         self.labels = labels
         self.pixel_norm = pixel_norm
 
+        if not self.support_set:
+            self.method = PreprocessingMethod.NONE
+
         match self.method:
 
             case PreprocessingMethod.STANDARD:
@@ -84,7 +86,7 @@ class FSLDataset(Dataset):
             case PreprocessingMethod.RESIZE_SUPPORT_GT:
                 self.resize_support_gt()
 
-            case PreprocessingMethod.NORMALIZE_ANNOTATIONS:
+            case PreprocessingMethod.NORMALIZE_SUPPORT_GT:
                 self.normalize_annotations()
 
             case PreprocessingMethod.DETECTION_CROP:
@@ -93,14 +95,11 @@ class FSLDataset(Dataset):
             case PreprocessingMethod.NORM_DETECTION_CROP:
                 self.detection_crop(True)
 
-            case PreprocessingMethod.RESIZE_LABELS:
-                self.resize_labels()
-
             case PreprocessingMethod.AUGMENT_SUPPORT_IMAGES:
                 epochs = kwargs["epochs"] if "epochs" in kwargs else 4
                 self.augment_support_images(epochs)
 
-            case "none":
+            case PreprocessingMethod.NONE:
                 pass
 
             case _:
@@ -108,11 +107,6 @@ class FSLDataset(Dataset):
 
     def __len__(self) -> int:
         return len(self.data)
-    
-    def _check_support_set(self):
-
-        if self.s_x is None or self.s_y is None:
-            raise ValueError("Operation requires support set and s_x or s_y are None!")
         
     def _stack_sx(self, s_x):
 
@@ -178,14 +172,17 @@ class FSLDataset(Dataset):
             bboxes = torch.tensor(gt["bboxes"])
             scale = torch.tensor([w / W, h / H, w / W, h / H])
             new_gt["bboxes"] = (bboxes * scale).tolist()
-        
-            return xi, new_gt
+            gt = new_gt
+        elif isinstance(gt, torch.Tensor) and len(gt.shape) > 2:
+            new_gt = T.functional.resize(
+                gt, self.img_size,
+                interpolation=T.functional.InterpolationMode.NEAREST,
+            )
+            gt = new_gt
 
         return xi, gt
     
     def transform_s_x(self):
-
-        self._check_support_set()
 
         s_x = []
         s_y = []
@@ -215,35 +212,14 @@ class FSLDataset(Dataset):
                 ))
             self.s_y = torch.stack(new_s_y).squeeze(1)
 
-    # TODO - double check resizing strategy
-    def resize_labels(self):
-
-        self.resize_annotations()
-
-        if self.labels is None:
-            raise ValueError("Cannot resize None!")
-        
-        if isinstance(self.labels[0], torch.Tensor):
-            new_labels = []
-            for yi in self.labels:
-                new_labels.append(T.functional.resize(
-                    yi,
-                    self.img_size,
-                    interpolation=T.functional.InterpolationMode.NEAREST,
-                ))
-            self.labels = new_labels
-
     def normalize_annotations(self):
-
-        self._check_support_set()
 
         s_x = []
         s_y = []
         for img, annot in zip(self.s_x, self.s_y):
             if isinstance(img, Image):
+                old_w, old_h = img.size
                 img = self.transf(img)
-
-            old_h, old_w = img.size
 
             if "bboxes" not in annot.keys():
                 raise KeyError("Bounding Box annotations should be named bboxes and be a list of bounding boxes [xmin, ymin, xmax, ymax]")
@@ -302,7 +278,6 @@ class FSLDataset(Dataset):
         self.s_y = torch.stack(self.s_y)
     
     def __getitem__(self, index: int):
-
 
         xi = self.data[index]
         yi = None

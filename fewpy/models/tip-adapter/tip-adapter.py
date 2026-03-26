@@ -2,7 +2,7 @@ from fewpy.models.register import register_constructor
 from fewpy.util.download import download
 from .base.clip import CLIP
 
-from typing import Tuple, Union, List
+from typing import Union, List
 from .config import TipAdapterConfig
 from .base.simple_tokenizer import SimpleTokenizer
 
