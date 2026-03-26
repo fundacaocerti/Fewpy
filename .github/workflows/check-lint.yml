@@ -20,9 +20,7 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           version-file: "pyproject.toml"
-
-      - name: Check uv version
-        run: echo uv --version
+          version: latest
           
       - name: Sync Dependencies
         run: uv sync --dev
