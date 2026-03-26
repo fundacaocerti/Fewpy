@@ -65,6 +65,9 @@ poe = [
     "poethepoet>=0.36.0",
 ]
 
+[tool.uv]
+required-version = ">=0.9.5"
+
 [tool.ruff]
 line-length = 80
 lint.extend-select = ["I", "W", "E"]
