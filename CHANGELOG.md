@@ -44,4 +44,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    - Utility 'FSLDataset' added new preprocessing method to be used with TipAdapter [20](https://github.com/fundacaocerti/Fewpy/pull/20)
    - Utility 'FSLDataset' uses PreprocessingMethod(Enum) for preprocessing method selection [20](https://github.com/fundacaocerti/Fewpy/pull/20)
    - Utility 'FSLDataset' fixed bounding box normalization bug [20](https://github.com/fundacaocerti/Fewpy/pull/20)
-   - Model 'FPTRANS' predict updated to support training mode (test pending) [20](https://github.com/fundacaocerti/Fewpy/pull/20)
+   - Model 'FPTRANS' predict updated to support training mode [20](https://github.com/fundacaocerti/Fewpy/pull/20)
