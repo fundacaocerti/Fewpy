@@ -18,6 +18,44 @@ from pathlib import Path
 interpb = partial(F.interpolate, mode='bilinear', align_corners=True)
 interpn = partial(F.interpolate, mode='nearest')
 
+class PairwiseLoss(nn.Module):
+    def __init__(self, reduction='mean'):
+        super().__init__()
+        self.scale = 10
+        self.reduction = reduction
+        self.loss_obj = nn.BCEWithLogitsLoss(reduction='none')
+        
+    def forward(self, x1, y1, x2, y2):
+        """
+        x1: torch.Tensor. [B, S, C, N]
+        x2: torch.Tensor. [B, 1, C, N]
+        y1: torch.Tensor. [B, S, N], containing {0, 1, 255}
+        y2: torch.Tensor. [B, 1, N], containing {0, 1, 255}
+        """
+        B, S, C, N = x1.shape
+        
+        x1 = F.normalize(x1, p=2, dim=2)    # [B, S, C, N]
+        x1 = x1.permute(0, 1, 3, 2).reshape(B, S * N, C)        # [B, N1, C]
+        y1 = y1.view(B, S * N, 1)                               # [B, N1, 1]
+        x2 = F.normalize(x2, p=2, dim=2)    # [BQ, C, N]
+        x2 = x2.permute(0, 2, 1, 3).reshape(B, C, N)            # [B, C, N2]
+        y2 = y2.view(B, 1, N)                                   # [B, 1, N2]
+
+        sim = torch.bmm(x1, x2)                                 # [B, N1, N2]
+        lab = (y1 == y2).float()                                # [B, N1, N2]
+        ignore = y1 + y2 >= 255
+        keep = ~(ignore | (y1 + y2 == 0))
+
+        loss_no_reduce = self.loss_obj(sim * self.scale, lab)
+        if self.reduction == 'none':
+            return loss_no_reduce, keep
+        elif self.reduction == 'mean':
+            # Compute on used positions
+            loss = (loss_no_reduce * keep).sum() / (keep.sum() + 1e-6)
+            return loss
+        else:
+            raise ValueError
+
 class Residual(nn.Module):
     def __init__(self, layers, up=2):
         super().__init__()
@@ -73,6 +111,14 @@ class FPTRANS(nn.Module):
 
         # Background sampler
         self.bg_sampler = np.random.RandomState(1289)
+        self.pairwise_loss = None
+
+    def train(self, mode=True):
+
+        if self.pairwise_loss is None:
+            self.pairwise_loss = PairwiseLoss()
+            
+        return super().train(mode)
 
     def build_upsampler(self, embed_dim):
         return Residual(nn.Sequential(
@@ -113,7 +159,6 @@ class FPTRANS(nn.Module):
             'loss_pair': float
                 pair-wise loss
         """
-
 
         B, S, C, H, W = s_x.size()
         x0 = x.clone()
@@ -164,7 +209,7 @@ class FPTRANS(nn.Module):
             out_shape = y.shape[-2:] if y is not None else (H, W)
         out = interpb(pred, out_shape)    # [BQ, 2, *, *]
 
-        if self.args.training and y is not None:
+        if self.training and y is not None:
             # Pairwise loss
             output = dict(out=out)
             x1 = sup_fts.flatten(3)                # [B, S, C, N]
@@ -173,7 +218,7 @@ class FPTRANS(nn.Module):
 
             y2 = interpn(y.float(), (h, w)).flatten(2).long()   # [B, 1, N]
 
-            output['loss_pair'] = self.pairwise_loss(x1, y1, x2, y2)
+            output['loss_pair'] = self.pairwise_loss(x1, y1, x2, y2) * self.args.pair_lossW
 
             # Prompt-Proxy prediction
             fg_token = self.purifier(backbone_out['tokens']['fg'])[:, :, 0, 0]        # [B, c]
@@ -186,11 +231,18 @@ class FPTRANS(nn.Module):
             output['out_prompt'] = pred_prompt
 
             return output
-            
-        if self.Probs_return:
-            return out #[bsz, 2, H, W] 
-        else:
-            return out.argmax(dim=1) #[bsz, H, W] 
+         
+        if not self.Probs_return:
+            out = out.argmax(dim=1) #[bsz, H, W] 
+        
+        results = []
+        for segmentation in out:
+            results.append({
+                "task": "segmentation",
+                "data": segmentation,
+            })
+
+        return results
         
 
     def classifier(self, sup_fts, qry_fts, sup_mask):
@@ -336,7 +388,7 @@ class FPTRANS(nn.Module):
                 params.append(var)
         return [{'params': params}]
 
-    def predict(self, x: torch.Tensor, s_x: torch.Tensor, s_y: torch.Tensor):
+    def predict(self, x: torch.Tensor, s_x: torch.Tensor, s_y: torch.Tensor, y: torch.Tensor=None):
         
         if self.args.SAHI:
             
@@ -359,17 +411,7 @@ class FPTRANS(nn.Module):
 
             return novo_tensor
 
-        output = self(x, s_x, s_y)
-        results = []
-
-        for segmentation in output:
-            results.append({
-                "task": "segmentation",
-                "data": segmentation,
-            })
-
-        return results
-
+        return self(x, s_x, s_y, y)
 
 @register_constructor(name="FPTRANS", config_cls=FPTRANSConfig)
 class constructor_FPTRANS():
@@ -415,6 +457,6 @@ class constructor_FPTRANS():
 
         if self.args.training:
         
-            return model.train()
+            return model.train(), device
 
         return model.eval(), device

@@ -27,3 +27,4 @@ class FPTRANSConfig(BaseModel):
     coco2pascal: bool = Field(default=False)
     num_prompt: int = Field(default=72)
     pt_std: float = Field(default=0.02)
+    pair_lossW: float = Field(default=0.02)
