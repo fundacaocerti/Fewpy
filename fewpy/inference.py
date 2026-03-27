@@ -58,6 +58,11 @@ class FewShotModel:
     @staticmethod
     def get_available_models():
         return REGISTRY.keys()
+    
+    @property
+    def training(self):
+        
+        return self.model.training
 
     def get_model_in_features(self):
 
