@@ -447,9 +447,11 @@ class constructor_FPTRANS():
 
             if "model_state" in weights:
                 state_dict = weights["model_state"]
-            if "state_dict" in weights:
+            elif "state_dict" in weights:
                 state_dict = weights["state_dict"]
-
+            else:
+                state_dict = weights
+            
             state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
             state_dict.update({k: v for k, v in model.state_dict().items() if 'original_encoder' in k})
 
