@@ -54,6 +54,15 @@ class FewShotModel:
     def __load_model(model: str, config: dict):
 
         return REGISTRY[model][CONSTRUCTOR](REGISTRY[model][CONFIG](**config)).instantiate_model()
+    
+    @staticmethod
+    def get_available_models():
+        return REGISTRY.keys()
+    
+    @property
+    def training(self):
+        
+        return self.model.training
 
     def get_model_in_features(self):
 

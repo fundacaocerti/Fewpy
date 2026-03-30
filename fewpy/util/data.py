@@ -4,6 +4,7 @@ from PIL.Image import Image
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms as T
 import torchvision.transforms.functional as F
+from enum import Enum
 
 
 def d2_tensor_transform(image):
@@ -12,28 +13,51 @@ def d2_tensor_transform(image):
     
     return torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
 
+
+class PreprocessingMethod(Enum):
+
+    NONE = "none"
+    STANDARD = "standard"
+    NORMALIZE_SUPPORT_GT = "normalize_support_gt"
+    RESIZE_SUPPORT_GT = "resize_support_gt"
+    DETECTION_CROP = "detection_crop"
+    NORM_DETECTION_CROP = "norm_detection_crop"
+    AUGMENT_SUPPORT_IMAGES = "augment_support_images"
+
+
 class FSLDataset(Dataset):
 
     def __init__(self,
                  x: list[Image],
                  s_x: list[Image]=None,
-                 s_y: list[dict] | list[torch.Tensor] | torch.Tensor=None,
-                 labels: list[dict]=None,
+                 s_y: list[dict] | list[torch.Tensor]=None,
+                 labels: list[dict] | list[torch.Tensor]=None,
                  img_size: tuple[int] | int=None,
                  max_size: int=None,
+                 antialias: bool=True,
+                 interpolation: T.InterpolationMode=T.InterpolationMode.BICUBIC,
                  pixel_norm: tuple=None,
-                 support_set_preprocessing_method: str="standard",
+                 center_crop: int=None,
+                 support_set_preprocessing_method: PreprocessingMethod=PreprocessingMethod.STANDARD,
                  transform_datapoints: bool=True,
+                 **kwargs
             ) -> None:
         super().__init__()
 
         # set transform composition that turns pillow image objects into datapoints compatible with the library
         transfs = []
         if img_size is not None:
-            if max_size is not None:
-                transfs.append(T.Resize(size=img_size, max_size=max_size))
-            else:
-                transfs.append(T.Resize(img_size))
+            transfs.append(
+                T.Resize(
+                    size=img_size, 
+                    max_size=max_size, 
+                    antialias=antialias,
+                    interpolation=interpolation
+                    )
+                )
+
+        if center_crop is not None and center_crop != 0:
+            transfs.append(T.CenterCrop(center_crop))
  
         transfs.append(T.ToTensor())
         if pixel_norm is not None:
@@ -45,20 +69,44 @@ class FSLDataset(Dataset):
         self.support_set = (not s_x is None) and (not s_y is None)
         self.s_x = s_x
         self.s_y = s_y
-        self.support_set_preproc = False
         self.transform_datapoints = transform_datapoints
         self.img_size = img_size
-        self.method = support_set_preprocessing_method.lower()
+        self.method = support_set_preprocessing_method
         self.labels = labels
         self.pixel_norm = pixel_norm
 
+        if not self.support_set:
+            self.method = PreprocessingMethod.NONE
+
+        match self.method:
+
+            case PreprocessingMethod.STANDARD:
+                self.transform_s_x()
+
+            case PreprocessingMethod.RESIZE_SUPPORT_GT:
+                self.resize_support_gt()
+
+            case PreprocessingMethod.NORMALIZE_SUPPORT_GT:
+                self.normalize_annotations()
+
+            case PreprocessingMethod.DETECTION_CROP:
+                self.detection_crop()
+
+            case PreprocessingMethod.NORM_DETECTION_CROP:
+                self.detection_crop(True)
+
+            case PreprocessingMethod.AUGMENT_SUPPORT_IMAGES:
+                epochs = kwargs["epochs"] if "epochs" in kwargs else 4
+                self.augment_support_images(epochs)
+
+            case PreprocessingMethod.NONE:
+                pass
+
+            case _:
+                raise ValueError("Unsuported support_set_preprocessing_method configured!") 
+
     def __len__(self) -> int:
         return len(self.data)
-    
-    def _check_support_set(self):
-
-        if self.s_x is None or self.s_y is None:
-            raise ValueError("Operation requires support set and s_x or s_y are None!")
         
     def _stack_sx(self, s_x):
 
@@ -71,8 +119,6 @@ class FSLDataset(Dataset):
                 self.s_x = s_x
         else:
             self.s_x = s_x
-
-        self.support_set_preproc = True
 
     def _padded_crop(self, image, bbox, output_size=(320, 320), norm=False, padding_ratio=0.5):
             if isinstance(output_size, int):
@@ -115,44 +161,41 @@ class FSLDataset(Dataset):
         
             return support_patch, bbox
     
-    def _rescale_bboxes(self, img, bboxes=None):
+    def _transform(self, img, gt):
 
-        if bboxes is not None:
-            new_bboxes = []
-            for bbox in bboxes:
-                new_bboxes.append([
-                    bbox[0] * ratio_w,
-                    bbox[1] * ratio_h,
-                    bbox[2] * ratio_w,
-                    bbox[3] * ratio_h,
-                ])
-        
-        return bboxes
+        W, H = img.size
+        xi = self.transf(img)
+        if isinstance(gt, dict) and "bbboxes" in gt.keys():
+            new_gt = {k: gt[k] for k in gt.keys()}
+            new_gt["bboxes"] = list()
+            w, h = xi.shape[-1], xi.shape[-2]
+            bboxes = torch.tensor(gt["bboxes"])
+            scale = torch.tensor([w / W, h / H, w / W, h / H])
+            new_gt["bboxes"] = (bboxes * scale).tolist()
+            gt = new_gt
+        elif isinstance(gt, torch.Tensor) and len(gt.shape) > 2:
+            new_gt = T.functional.resize(
+                gt, self.img_size,
+                interpolation=T.functional.InterpolationMode.NEAREST,
+            )
+            gt = new_gt
+
+        return xi, gt
     
     def transform_s_x(self):
 
-        self._check_support_set()
-
         s_x = []
-        if "bboxes" in self._s_y.keys():
-            s_y = []
-            for img, gt in zip(self.s_x, self.s_y):
-                w, h = img.size
-                xi = self.transf(img)
-                ratio_h, ratio_w = xi.shape[-2] / h, xi.shape[-1] / w
-                img, bboxes = self._rescale_bboxes(ratio_h, ratio_w, gt["bbox"])
-                new_gt = {k: gt[k] for k in gt.keys()}
-                new_gt["bboxes"] = bboxes
-                s_y.append(new_gt)
-            self.s_y = s_y
-        else:
-            for img in self.s_x:
-                img = self._transform(img)
-                s_x.append(img)
+        s_y = []
+
+        for img, gt in zip(self.s_x, self.s_y):
+            img, gt = self._transform(img, gt)
+            s_x.append(img)
+            s_y.append(gt)
 
         self._stack_sx(s_x)
+        self.s_y = s_y
 
-    def resize_annotations(self):
+    def resize_support_gt(self):
 
         if self.img_size is None:
             raise ValueError("Support Set cannot be resized if img_size is None!")
@@ -169,35 +212,14 @@ class FSLDataset(Dataset):
                 ))
             self.s_y = torch.stack(new_s_y).squeeze(1)
 
-
-    def resize_labels(self):
-
-        self.resize_annotations()
-
-        if self.labels is None:
-            raise ValueError("Cannot resize None!")
-        
-        if isinstance(self.labels[0], torch.Tensor):
-            new_labels = []
-            for yi in self.labels:
-                new_labels.append(T.functional.resize(
-                    yi,
-                    self.img_size,
-                    interpolation=T.functional.InterpolationMode.NEAREST,
-                ))
-            self.labels = new_labels
-
     def normalize_annotations(self):
-
-        self._check_support_set()
 
         s_x = []
         s_y = []
         for img, annot in zip(self.s_x, self.s_y):
             if isinstance(img, Image):
+                old_w, old_h = img.size
                 img = self.transf(img)
-
-            old_h, old_w = img.size
 
             if "bboxes" not in annot.keys():
                 raise KeyError("Bounding Box annotations should be named bboxes and be a list of bounding boxes [xmin, ymin, xmax, ymax]")
@@ -238,58 +260,37 @@ class FSLDataset(Dataset):
         self.s_x = torch.stack(s_x)
         self.s_y = s_y
 
-        self.support_set_preproc = True
+    def augment_support_images(self, epochs):
+
+        _transform = T.Compose([
+            T.RandomResizedCrop(size=224, scale=(0.5, 1), interpolation=T.InterpolationMode.BICUBIC),
+            T.RandomHorizontalFlip(p=0.5),
+            T.ToTensor(),
+            T.Normalize(mean=(0.48145466, 0.4578275, 0.40821073), std=(0.26862954, 0.26130258, 0.27577711))
+        ])
+
+        augmented_set = []
+        for _ in range(epochs):
+            for img in self.s_x:
+                augmented_set.append(_transform(img))
+
+        self.s_x = torch.stack(augmented_set)
+        self.s_y = torch.stack(self.s_y)
     
     def __getitem__(self, index: int):
 
         xi = self.data[index]
-        yi = dict()
+        yi = None
         if self.transform_datapoints:
-            w, h = xi.size
-            xi = self.transf(xi)
             if self.labels is not None:
-                yi = {k: self.labels[index] for k in self.labels[index].keys()}
-                ratio_h, ratio_w = xi.shape[-2] / h, xi.shape[-1] / w
-                bboxes = self._rescale_bboxes(ratio_h, ratio_w, bboxes=yi["bboxes"])
-                yi["bboxes"] = bboxes
+                xi, yi = self._transform(xi, self.labels[index])
+            else:
+                xi = self.transf(xi)
 
         if not self.support_set:
             return xi
         
-        if self.support_set_preproc:
-
-            if not yi is None:
-                return xi, yi, self.s_x, self.s_y
-
-            return xi, self.s_x, self.s_y
-        
-        match self.method:
-
-            case "standard":
-                self.transform_s_x()
-
-            case "resize_annotations":
-                self.resize_annotations()
-
-            case "normalize_annotations":
-                self.normalize_annotations()
-
-            case "detection_crop":
-                self.detection_crop()
-
-            case "norm_detection_crop":
-                self.detection_crop(True)
-
-            case "resize_labels":
-                self.resize_labels()
-
-            case "none":
-                self.support_set_preproc = True
-
-            case _:
-                raise ValueError("Unsuported support_set_preprocessing_method configured!") 
-            
-        if yi is not None:
+        if not yi is None:
             return xi, yi, self.s_x, self.s_y
 
         return xi, self.s_x, self.s_y

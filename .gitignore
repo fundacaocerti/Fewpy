@@ -169,3 +169,11 @@ poetry.toml
 
 # LSP config files
 pyrightconfig.json
+
+# Datasets
+testdata2/
+dataset/
+ds/
+
+# weghts
+weights/

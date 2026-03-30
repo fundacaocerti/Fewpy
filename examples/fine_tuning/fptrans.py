@@ -8,24 +8,27 @@ import PIL
 import numpy as np
 
 import torch
-
-import torchvision.transforms.functional as F
+from torch.optim import AdamW
+from tqdm import tqdm
 
 
 def fptrans_collate(batch):
 
-    batch, s_x, s_y = zip(*batch)
+    batch, labels, s_x, s_y = zip(*batch)
     batch = torch.stack(batch)
     s_x = torch.stack(s_x)
     s_y = torch.stack(s_y)
 
-    return batch, s_x, s_y
+    return batch, torch.stack(labels), s_x, s_y
 
 # prepare support and query data 
 K = 1
-N = 4
+N = 64
 CLASSES = ["bottle",]
 IMG_SIZE = 700
+epochs = 4
+lr = 1e-5
+loss_fn = torch.nn.CrossEntropyLoss(ignore_index=255)
 
 dataset = Path("./ds").expanduser()
 annotations = dataset / "Annotations" 
@@ -51,7 +54,7 @@ for i in indices:
     root = tree.getroot()
     image = images / root.find("filename").text
     s_yi = segmentation / f"{root.find("filename").text[:-4]}.png"
-    if not s_yi.exists():
+    if not s_yi.exists() or not image.exists():
         # print(f"Segmentation {s_yi} does not exist!\n\n")
         continue
     first = True
@@ -83,7 +86,10 @@ for i in indices:
     
     elif len(query_images) < N:
         query_images += [PIL.Image.open(image).convert("RGB")]
-        query_targets += [PIL.Image.open(s_yi).convert("L")]
+        mask = PIL.Image.open(s_yi).convert("L")
+        mask = torch.from_numpy(np.array(mask))
+        mask = (mask > 0).long().unsqueeze(0)
+        query_targets += [mask]
         sizes.append(query_images[-1].size)
 
     if len(support_images) >= K and len(query_images) >= N:
@@ -93,6 +99,7 @@ ds = FSLDataset(
     x=query_images,
     s_x=support_images,
     s_y=support_ground_truth,
+    labels=query_targets,
     img_size=(IMG_SIZE, IMG_SIZE),
     pixel_norm=((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),       # (mean, std)
     support_set_preprocessing_method=PreprocessingMethod.RESIZE_SUPPORT_GT,
@@ -100,7 +107,7 @@ ds = FSLDataset(
 
 dl = torch.utils.data.DataLoader(
     ds, 
-    batch_size=2,
+    batch_size=1,
     shuffle=False,
     collate_fn=fptrans_collate      # fptrans collate function
 )
@@ -144,16 +151,28 @@ args = {
     "bg_num": 5,
     "bsz": 32,
     "img_size": IMG_SIZE,
-    "training": False,
+    "training": True,
     "vit_depth": 10,
     "vit_stride": 23,
     "num_prompt": 72,
+    "pair_lossW": 0.02,
 }
 
 model = FewShotModel(
     model="FPTRANS",
     config=args
 )
+
+model.train()
+
+for param in model.parameters():
+    param.requires_grad = False
+
+for param in model.model.purifier.parameters():
+    param.requires_grad = True
+
+parameters = [param for param in model.parameters() if param.requires_grad]
+optimizer = AdamW(parameters, lr=lr)
 
 """
 FPTRANS.predict:
@@ -170,19 +189,40 @@ Returns:
             The dict contains a string "segmentation" under the key "task" to specify the task type,
             a "data" mask, Tensor of format (H, W) and a "postproc_data" mask, Tensor of format (H, W)
 """
-results = []
-for batch, s_x, s_y in dl:
-    # print(f"shapes: batch = {batch.shape}, s_x = {s_x.shape}, s_y = {s_y.shape}")
-    results += model.predict(
-        x=batch,
-        s_x=s_x,
-        s_y=s_y,
-    )
+for epoch in range(epochs):
+    loss_dict = {
+        'loss': [],
+        'prompt': [],
+        'pair': [],
+    }
+    for batch, labels, s_x, s_y in tqdm(dl):
+        optimizer.zero_grad()
+        # print(f"shapes: batch = {batch.shape}, s_x = {s_x.shape}, s_y = {s_y.shape}")
+        output = model.predict(
+            x=batch,
+            s_x=s_x,
+            s_y=s_y,
+            y=labels,
+        )
 
-# saving the masks as images
-for i, yi in enumerate(results):
-    mask = yi["data"]
-    mask = F.to_pil_image(mask.to(torch.uint8) * 255)
-    mask = mask.resize(sizes[i], resample=PIL.Image.NEAREST)
-    mask.save(f"output{i}.png")
-    query_targets[i].save(f"expected{i}.png")
+        loss_pair = output["loss_pair"]
+        labels = labels.view(-1, *labels.shape[-2:])
+        loss = loss_fn(output["out"], labels)
+        loss_prompt = loss_fn(output["out_prompt"], labels)
+        total_loss = loss + loss_pair + loss_prompt
+
+        total_loss.backward()
+        optimizer.step()
+
+        loss_dict["loss"].append(loss.item())
+        loss_dict["pair"].append(loss_pair.item())
+        loss_dict["prompt"].append(loss_prompt.item())
+
+    print(f"Epoch: {epoch}/{epochs}")
+    print(f"Pairwise Loss: {sum(loss_dict["pair"]) / len(loss_dict["pair"])}")
+    print(f"Prompt Loss: {sum(loss_dict["prompt"]) / len(loss_dict["prompt"])}")
+    print(f"Output Loss: {sum(loss_dict["loss"]) / len(loss_dict["loss"])}")
+    print(f"Total Loss {sum([sum(v) for v in loss_dict.values()]) / len(loss_dict["loss"])}")
+
+print("\nFine-tuning complete!")
+torch.save(model.state_dict(), "fptrans.pth")

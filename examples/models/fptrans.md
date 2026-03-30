@@ -55,6 +55,7 @@ args = {
     "coco2pascal": False,       # flag for cross-dataset evaluation (e.g., training on COCO, evaluating on Pascal VOC)
     "num_prompt": 72,           # the number of learnable visual prompt tokens injected into the transformer
     "pt_std": 0.02,             # standard deviation for the normal distribution used to initialize the prompt tokens
+    "pair_lossW": 0.02          # scaling factor for pairwise loss
 }
 ```
 

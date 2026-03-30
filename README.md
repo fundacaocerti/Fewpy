@@ -31,25 +31,27 @@ Fewpy makes it easy to load and run highly performant models on benchmarks to ex
 * **labels**: (list[dict]) Optional annotations (bboxes/classes) for the query images.
 * **img_size**: (tuple/int) Target (H, W) for resizing.
 * **max_size**: (int) Optional maximum edge length constraint for resizing.
+* **antialias**: (bool) If set True Resizing uses antialias.
+* **interpolation**: (torchvision.transforms.InterpolationMode) Interpolation mode used in the resizing operation.
 * **pixel_norm**: (tuple) Mean and Std for normalization.
-* **support_set_preprocessing_method**: (str) Strategy for support set transformation. Options include:
-    * `"standard"`: Basic transform and stacking.
-    * `"resize_annotations"`: Resizes images and mask-style `s_y`.
-    * `"normalize_annotations"`: Scales `s_y` bboxes to [0, 1].
-    * `"detection_crop"`: Crops `s_x` around `s_y` bboxes with padding.
-    * `"norm_detection_crop"`: Padded crop with pixel normalization.
-    * `"resize_labels"`: Resizes both support annotations and query labels.
-    * `"none"`: Skips preprocessing.
+* **center_crop**: (int) Size of the center crop.
+* **support_set_preprocessing_method**: (PreprocessingMethod) Strategy for support set transformation. Options include:
+    * `PreprocessingMethod.STANDARD`: Basic transform and stacking.
+    * `PreprocessingMethod.RESIZE_SUPPORT_GT`: Resizes images and mask-style `s_y`.
+    * `PreprocessingMethod.NORMALIZE_SUPPORT_GT`: Scales `s_y` bboxes to [0, 1].
+    * `PreprocessingMethod.DETECTION_CROP`: Crops `s_x` around `s_y` bboxes with padding.
+    * `PreprocessingMethod.NORM_DETECTION_CROP`: Padded crop with pixel normalization.
+    * `PreprocessingMethod.AUGMENT_SUPPORT_IMAGES`: Creates more support images through augmentation of the support set.
+    * `PreprocessingMethod.NONE`: Skips preprocessing.
 * **transform_datapoints**: (bool) If True, applies the transform pipeline to Query images and scales their associated `labels`.
 
 #### Key Logic
 1. **Transform Pipeline**: A `torchvision.transforms.Compose` pipeline is built using `Resize`, `ToTensor`, and `Normalize` based on initialization arguments.
 2. **Lazy Support Set Preprocessing**:
-   - On the first `__getitem__` call, the dataset executes a specific method determined by `support_set_preprocessing_method`.
+   - On initialization `__init__` call, the dataset executes a specific method determined by `support_set_preprocessing_method`.
    - **Stacking**: Images are stacked into a 4D tensor if shapes are uniform; otherwise, they remain a list of tensors.
    - **Detection Cropping**: Uses `_padded_crop` to zoom into support objects with a 0.5 padding ratio before resizing.
-3. **Query Label Scaling**: If `transform_datapoints` is enabled and `labels` are provided, bounding boxes for query images are automatically rescaled to match the new `img_size`.
-4. **Caching**: Once processed, `self.support_set_preproc` is set to True to bypass reprocessing for subsequent indices.
+3. **Query Label Scaling**: If `transform_datapoints` is enabled and `labels` are provided, bounding boxes and segmentation maps for query images are automatically rescaled to match the new `img_size`.
 
 #### Utility: fsl_collate
 Standard collators stack every element, which can lead to redundant memory usage in FSL because the support set is usually identical for every query in a batch. `fsl_collate` optimizes this by:
@@ -59,7 +61,7 @@ Standard collators stack every element, which can lead to redundant memory usage
 ### Usage Example
 
 ```python
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, PreprocessingMethod
 
 # Initialize with detection-based cropping for the support set
 ds = FSLDataset(
@@ -67,7 +69,7 @@ ds = FSLDataset(
     s_x=s_imgs, 
     s_y=s_annots, 
     img_size=(320, 320),
-    support_set_preprocessing_method="detection_crop"
+    support_set_preprocessing_method=PreprocessingMethod.DETECTION_CROP
 )
 
 # Use custom collate to prevent support set duplication in memory
@@ -103,6 +105,7 @@ model = FewShotModel(model="AirShot", config=args)
 #### 1. AnomalyCLIP
 * **Task:** Segmentation
 * **Description:** Implementation of [AnomalyCLIP](https://arxiv.org/abs/2310.18961). Optimized for zero-shot or few-shot anomaly detection and segmentation.
+
 * **Detailed Documentation:** [examples/models/anomalyclip.md](./examples/models/anomalyclip.md)
 
 #### 2. FPTRANS
@@ -120,7 +123,14 @@ model = FewShotModel(model="AirShot", config=args)
 #### 4. Qwen
 * **Task:** Detection
 * **Description:** A wrapper for [Qwen3-VL-8B-Instruct](https://arxiv.org/abs/2505.09388) that enables few-shot prompting for object detection via Vision-Language Models.
+
 * **Detailed Documentation:** [examples/models/qwen.md](./examples/models/qwen.md)
+
+#### 5. TipAdapter
+* **Task:** Classification
+* **Description:** Based on [Tip-Adapter](https://arxiv.org/abs/2207.09519). A training-free Adaption of CLIP for Few-shot Classification.
+
+* **Detailed Documentation:** [examples/models/qwen.md](./examples/models/tipadapter.md)
 
 ## CVAT
 

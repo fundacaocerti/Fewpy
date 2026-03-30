@@ -62,7 +62,7 @@ class AnomalyCLIP(nn.Module):
         design_details=None
     ):
         
-        super().__init__()
+        super(AnomalyCLIP, self).__init__()
 
         self.config = config if config is not None else AnomalyCLIPConfig()
         self.context_length = context_length
@@ -223,7 +223,7 @@ class AnomalyCLIP(nn.Module):
         logits_per_text = logits_per_image.t()
 
         
-        # return logits_per_image, logits_per_text
+        return logits_per_image, logits_per_text
 
     def train(self, mode: bool=True):
         super().train(mode)
@@ -235,9 +235,13 @@ class AnomalyCLIP(nn.Module):
 
         return self
     
-    def parameters(self):
+    def parameters(self, recurse=True):
 
-        return self.prompt_learner.parameters()
+        yield from self.prompt_learner.parameters(recurse)
+    
+    def named_parameters(self, prefix = "", recurse = True, remove_duplicate = True):
+        
+        yield from self.prompt_learner.named_parameters(prefix, recurse, remove_duplicate)
 
     def predict(self,
                 x: torch.Tensor,
@@ -446,7 +450,6 @@ class contructor_AnomalyCLIP:
         checkpoint_path = model_path.parent / "anomaly_clip.pth"
         if not checkpoint_path.exists():
             checkpoint_path = None
-        
         
         model = torch.jit.load(model_path, map_location=device)
         state_dict = model.state_dict()

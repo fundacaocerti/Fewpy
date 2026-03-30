@@ -5,14 +5,12 @@ from torch.utils.data import DataLoader
 from pathlib import Path
 
 from torch.optim import AdamW
-import torch.nn.functional as F
 import torch
 
 import xml.etree.ElementTree as ET
 
 from PIL import Image
 import numpy as np
-import json
 
 
 def qwen_collate(batch):
