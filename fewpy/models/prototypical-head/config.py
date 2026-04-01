@@ -13,3 +13,5 @@ class PrototypicalHeadConfig(BaseModel):
     cache_dir: str = Field(default="")
     detection_threshold: float = Field(default=0.5)
     task: str = Field(default="segmentation")
+    img_h: int = Field(default=224)
+    img_w: int = Field(default=224)

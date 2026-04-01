@@ -24,7 +24,6 @@ class PrototypicalHead(torch.nn.Module):
         self.adapter = None 
         self.temp = getattr(config, 'temperature', 10.0)
         self.regressor = None
-        self.nms = None
     
     def _apply_nms(self, bboxes, scores, class_ids, iou_threshold):
 
@@ -40,6 +39,27 @@ class PrototypicalHead(torch.nn.Module):
             self.adapter.train(mode)
 
         return self
+    
+    def parameters(self, recurse = True):
+        params = []
+        if self.adapter is not None:
+            params += self.adapter.parameters(recurse)
+
+        if self.regressor is not None:
+            params += self.regressor.parameters(recurse)
+
+        return params
+        
+    def named_parameters(self, prefix = "", recurse = True, remove_duplicate = True):
+        
+        params = []
+        if self.adapter is not None:
+            params += self.adapter.named_parameters(prefix, recurse, remove_duplicate)
+
+        if self.regressor is not None:
+            params += self.regressor.pnamed_arameters(prefix, recurse, remove_duplicate)
+
+        return params
 
     def gen_prototypes(self, support_features, support_gt):
 
@@ -54,33 +74,45 @@ class PrototypicalHead(torch.nn.Module):
         
         for label in unique_labels:
             mask = (support_gt["labels"] == label)
-            feat_subset = support_features[mask]
+            feature_subset = support_features[mask]
+
+            is4d = len(feature_subset.shape) == 4
             
             match self.config.task:
                 case "detection":
-                    boxes_subset = support_gt["bboxes"][mask]
-                    roi_feat = roi_align(feat_subset, boxes_subset, output_size=(7, 7), spatial_scale=1.0)
-                    proto = roi_feat.mean(dim=[0, 2, 3]) 
-                
+                    if is4d and "bboxes" in support_gt:
+                        boxes_subset = support_gt["bboxes"][mask]
+                        roi_feat = roi_align(feature_subset, boxes_subset, output_size=(7, 7), spatial_scale=1.0)
+                        proto = roi_feat.mean(dim=[0, 2, 3]) 
+                    else:
+                        proto = feature_subset.mean(dim=0) if not is4d else feature_subset.mean(dim=[0, 2, 3])
                 case "segmentation":
-                    mask_subset = support_gt["masks"][mask].unsqueeze(1) # [K, 1, H, W]
-                    mask_subset = F.interpolate(mask_subset, size=feat_subset.shape[-2:], mode='nearest')
-                    proto = (feat_subset * mask_subset).sum(dim=[0, 2, 3]) / (mask_subset.sum() + 1e-6)
-                
+                    if is4d and "masks" in support_gt:
+                        mask_subset = support_gt["masks"][mask].unsqueeze(1) 
+                        mask_subset = F.interpolate(mask_subset, size=feature_subset.shape[-2:], mode='nearest')
+                        proto = (feature_subset * mask_subset).sum(dim=[0, 2, 3]) / (mask_subset.sum() + 1e-6)
+                    else:
+                        proto = feature_subset.mean(dim=0) if not is4d else feature_subset.mean(dim=[0, 2, 3])
                 case "classification":
-                    proto = feat_subset.mean(dim=[0, 2, 3])
+                    proto = feature_subset.mean(dim=[0, 2, 3]) if is4d else feature_subset.mean(dim=0)
 
             prototypes.append(proto)
 
+        prototypes = torch.stack(prototypes)
+
         if self.config.cache_prototypes:
-            cache_dir.parent.mkdir(parents=True, exist_ok=True)
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            
             torch.save(prototypes, prototypes_path)
 
-        return torch.stack(prototypes), unique_labels
+        return prototypes, unique_labels
 
     def forward(self, query, support_images, support_gt):
-        query_features = self.backbone.encode_image(query)
-        support_features = self.backbone.encode_image(support_images)
+        query_features = self.backbone(query)
+        support_features = self.backbone(support_images)
+
+        # print("images shape", support_images.shape)
+        # print("features shape", support_features.shape)
 
         if self.training or getattr(self.config, 'load_adapter', False):
             query_features = self.adapter(query_features)
@@ -88,10 +120,17 @@ class PrototypicalHead(torch.nn.Module):
 
         prototypes, labels = self.gen_prototypes(support_features, support_gt)
 
-        q_feat_norm = F.normalize(query_features, p=2, dim=1)
+        query_features_norm = F.normalize(query_features, p=2, dim=1)
+        # print(type(prototypes))
         prototypes_norm = F.normalize(prototypes, p=2, dim=1)
 
-        logits = F.conv2d(q_feat_norm, prototypes_norm.view(-1, query_features.shape[1], 1, 1)) * self.temp
+        if query_features_norm.ndim == 2:
+            logits = (query_features_norm @ prototypes_norm.t()) * self.temp
+        else:
+            logits = F.conv2d(
+                query_features_norm, 
+                prototypes_norm.view(-1, query_features.shape[1], 1, 1)
+            ) * self.temp
 
         return logits, labels
 
@@ -100,15 +139,27 @@ class PrototypicalHead(torch.nn.Module):
         out = None
         results = []
 
+        # print("LOGITS:", logits.shape)
+
         match self.config.task:
 
             case "classification":
-                pooled_logits = F.adaptive_avg_pool2d(logits, (1, 1)).flatten(1)
-                out = labels[pooled_logits.argmax(dim=-1)].cpu().numpy()
+                pooled_logits = F.adaptive_avg_pool2d(logits, (1, 1)).flatten(1) if len(logits.shape) > 2 else logits
+                out = labels[pooled_logits.argmax(dim=-1).cpu()].cpu().numpy()
+                for label in out:
+                    results.append({
+                        "data": label,
+                        "task": "classification",
+                    })
 
             case "segmentation":
                 full_res_logits = F.interpolate(logits, size=x.shape[-2:], mode='bilinear', align_corners=False)
                 out = full_res_logits.argmax(dim=1).cpu().numpy()
+                for segment in out:
+                    results.append({
+                        "data": segment,
+                        "task": "segmentation",
+                    })
 
             case "detection":
                 out = logits.cpu().numpy()
@@ -139,6 +190,21 @@ class constructor_PrototypicalHead():
 
     def load_weights(self, model):
 
+        def extract_visual_encoder(model):
+            
+            visual = None
+            if hasattr(model, "visual"): 
+                visual = model.visual
+            elif hasattr(model, "visual_tower"): 
+                visual = model.visual
+            dummy_input = torch.randn(1, 3, self.args.img_h, self.args.img_w)
+            backbone = torch.jit.trace(visual, dummy_input)
+
+            del model
+            torch.cuda.empty_cache()
+
+            return backbone
+
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         if self.args.backbone == "":
@@ -149,8 +215,10 @@ class constructor_PrototypicalHead():
         if not model_path.exists():
             model_path = Path(download(self.args.backbone))
 
-        self.args.backbone = torch.jit.load(model_path, map_location=device)
-        model.backbone = self.args.backbone
+        full_backbone = torch.jit.load(model_path, map_location=device)
+        model.backbone = extract_visual_encoder(full_backbone)
+
+        print(model.backbone)
 
         if self.args.load_adapter:
             current_dir = Path(__file__).resolve().parent
