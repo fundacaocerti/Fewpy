@@ -88,10 +88,13 @@ class TipAdapter(nn.Module):
 
     def train(self, mode=True):
 
+        super().train(mode)
+        self.clip.eval()
+
         if self.adapter is not None:
             self.adapter.train(mode)
 
-        return super().train(mode)
+        return self
     
     def parameters(self, recurse=True):
 
