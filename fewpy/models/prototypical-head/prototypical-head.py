@@ -1,5 +1,5 @@
 from fewpy.models.register import register_constructor
-from fewpy.util.download import download, model2url
+from fewpy.util.download import download
 from .config import PrototypicalHeadConfig
 
 import sys
@@ -94,7 +94,7 @@ class PrototypicalHead(torch.nn.Module):
                     else:
                         proto = feature_subset.mean(dim=0) if not is4d else feature_subset.mean(dim=[0, 2, 3])
                 case "classification":
-                    proto = feature_subset.mean(dim=[0, 2, 3]) if is4d else feature_subset.mean(dim=0)
+                    proto = feature_subset.mean(dim=[0, 2, 3])
 
             prototypes.append(proto)
 
@@ -108,8 +108,8 @@ class PrototypicalHead(torch.nn.Module):
         return prototypes, unique_labels
 
     def forward(self, query, support_images, support_gt):
-        query_features = self.backbone(query)
-        support_features = self.backbone(support_images)
+        query_features = self.backbone(query.cuda().half())
+        support_features = self.backbone(support_images.cuda().half())
 
         # print("images shape", support_images.shape)
         # print("features shape", support_features.shape)
@@ -144,7 +144,7 @@ class PrototypicalHead(torch.nn.Module):
         match self.config.task:
 
             case "classification":
-                pooled_logits = F.adaptive_avg_pool2d(logits, (1, 1)).flatten(1) if len(logits.shape) > 2 else logits
+                pooled_logits = F.adaptive_avg_pool2d(logits, (1, 1)).flatten(1)
                 out = labels[pooled_logits.argmax(dim=-1).cpu()].cpu().numpy()
                 for label in out:
                     results.append({
@@ -198,7 +198,7 @@ class constructor_PrototypicalHead():
             elif hasattr(model, "visual_tower"): 
                 visual = model.visual
             dummy_input = torch.randn(1, 3, self.args.img_h, self.args.img_w)
-            backbone = torch.jit.trace(visual, dummy_input)
+            backbone = torch.jit.freeze(visual.eval())
 
             del model
             torch.cuda.empty_cache()
@@ -216,9 +216,7 @@ class constructor_PrototypicalHead():
             model_path = Path(download(self.args.backbone))
 
         full_backbone = torch.jit.load(model_path, map_location=device)
-        model.backbone = extract_visual_encoder(full_backbone)
-
-        print(model.backbone)
+        model.backbone = extract_visual_encoder(full_backbone).to(device)
 
         if self.args.load_adapter:
             current_dir = Path(__file__).resolve().parent

@@ -35,7 +35,7 @@ class FSLDataset(Dataset):
                  img_size: tuple[int] | int=None,
                  max_size: int=None,
                  antialias: bool=True,
-                 interpolation: T.InterpolationMode=T.InterpolationMode.BICUBIC,
+                 interpolation: F.InterpolationMode=F.InterpolationMode.BICUBIC,
                  pixel_norm: tuple=None,
                  center_crop: int=None,
                  support_set_preprocessing_method: PreprocessingMethod=PreprocessingMethod.STANDARD,

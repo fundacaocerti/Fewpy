@@ -26,6 +26,10 @@ def download(
     new_name: str="",
 ): 
     
+    if url not in model.keys():
+        valid_models = ";\n".join(model2url.keys()) + "."
+        raise ValueError(f"Tried to download invalid model {url}\nValid Models:\n{valid_models}")
+    
     url = model2url[model]
 
     if not cache_dir:
@@ -33,7 +37,7 @@ def download(
         cache_dir = current_dir / "weights"
     else:
         cache_dir = Path(cache_dir)
-    
+
     cache_dir.mkdir(parents=True, exist_ok=True)
     filename = Path(url).name
 
