@@ -26,7 +26,7 @@ def download(
     new_name: str="",
 ): 
     
-    if model not in model.keys():
+    if model not in model2url.keys():
         valid_models = ";\n".join(model2url.keys()) + "."
         raise ValueError(f"Tried to download invalid model {url}\nValid Models:\n{valid_models}")
     
