@@ -81,6 +81,8 @@ class TipAdapter(nn.Module):
             transforms.Normalize(mean=(0.48145466, 0.4578275, 0.40821073), std=(0.26862954, 0.26130258, 0.27577711))
         ])
 
+        self.trained = False
+
     def init_adapter(self, in_dim, out_dim):
 
         if self.adapter is None:
@@ -209,6 +211,7 @@ class TipAdapter(nn.Module):
         self.adapter.train()
 
         self.first = False
+        self.trained = True
 
     def predict(
             self, 
@@ -251,7 +254,7 @@ class TipAdapter(nn.Module):
 
             return self.combine_logits(x, clip_weights, affinity, V)
 
-        affinity = x @ K
+        affinity = x @ K if not self.trained else self.adapter(x)
         final_logits = self.combine_logits(x, clip_weights, affinity, V)
 
         final_predictions = torch.argmax(final_logits, dim=1)
@@ -397,13 +400,14 @@ class constructor_TipAdapter():
             target_dtype = next(model.clip.parameters()).dtype
 
             model.adapter.to(device=target_device, dtype=target_dtype)
-        else:
+            model.trained = True
+
+        if self.args.training:
+
             model.init_adapter(
                 in_dim=1024,
                 out_dim=self.args.kshot * self.args.n_novel_classes,
             )
-
-        if self.args.training:
         
             return model.train(), device
 
