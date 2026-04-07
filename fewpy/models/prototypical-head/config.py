@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List
-from torch.nn import Module as Module
+import torch
 
 
 class PrototypicalHeadConfig(BaseModel):
@@ -13,5 +13,23 @@ class PrototypicalHeadConfig(BaseModel):
     cache_dir: str = Field(default="")
     detection_threshold: float = Field(default=0.5)
     task: str = Field(default="segmentation")
-    img_h: int = Field(default=224)
-    img_w: int = Field(default=224)
+    dtype: str = Field(
+        default="float32", 
+        description="Precision to use: 'float32', 'float16', or 'bfloat16'"
+    )
+    augement_epochs: int = Field(default=0, description="Number of epochs the support set is augmented")
+
+    @property
+    def torch_dtype(self) -> torch.dtype:
+        mapping = {
+            "float32": torch.float32,
+            "fp32": torch.float32,
+            "float16": torch.float16,
+            "fp16": torch.float16,
+            "bfloat16": torch.bfloat16,
+            "bf16": torch.bfloat16,
+        }
+        dtype_str = self.dtype.lower()
+        if dtype_str not in mapping:
+            raise ValueError(f"Unsupported dtype: {self.model_dtype}. Use 'float32', 'float16', or 'bfloat16'.")
+        return mapping[dtype_str]

@@ -5,6 +5,7 @@ from .config import PrototypicalHeadConfig
 import sys
 import torch
 import warnings
+import numpy as np
 
 import torch.nn.functional as F
 from torchvision.ops import roi_align
@@ -20,9 +21,10 @@ class PrototypicalHead(torch.nn.Module):
     def __init__(self, config):
         super(PrototypicalHead, self).__init__()
         self.config = config
+        self.device = None
         self.backbone = None
         self.adapter = None 
-        self.temp = getattr(config, 'temperature', 10.0)
+        self.temp = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
         self.regressor = None
     
     def _apply_nms(self, bboxes, scores, class_ids, iou_threshold):
@@ -71,6 +73,11 @@ class PrototypicalHead(torch.nn.Module):
             prototypes_path = cache_dir / f"{self.config.kshot}_shot.pt"
             if prototypes_path.exists():
                 return torch.load(prototypes_path), unique_labels
+            
+        num_aug = self.config.augement_epochs
+        support_set_size = support_gt["labels"].shape[0]
+        if num_aug > 0:
+            support_features = support_features.view(num_aug, support_set_size, -1).mean(dim=0)
         
         for label in unique_labels:
             mask = (support_gt["labels"] == label)
@@ -94,7 +101,8 @@ class PrototypicalHead(torch.nn.Module):
                     else:
                         proto = feature_subset.mean(dim=0) if not is4d else feature_subset.mean(dim=[0, 2, 3])
                 case "classification":
-                    proto = feature_subset.mean(dim=[0, 2, 3])
+                    # proto = feature_subset.mean(dim=[0, 2, 3])
+                    proto = feature_subset.mean(dim=0)
 
             prototypes.append(proto)
 
@@ -108,15 +116,18 @@ class PrototypicalHead(torch.nn.Module):
         return prototypes, unique_labels
 
     def forward(self, query, support_images, support_gt):
-        query_features = self.backbone(query.cuda().half())
-        support_features = self.backbone(support_images.cuda().half())
+
+        query = query.to(self.device).to(self.config.torch_dtype)
+        support_images = support_images.to(self.device).to(self.config.torch_dtype)
+        
+        query_features = self.backbone(query)
+        support_features = self.backbone(support_images)
+
+        # assert len(query_features.shape) == 4
+        # assert len(support_features.shape) == 4 
 
         # print("images shape", support_images.shape)
         # print("features shape", support_features.shape)
-
-        if self.training or getattr(self.config, 'load_adapter', False):
-            query_features = self.adapter(query_features)
-            support_features = self.adapter(support_features)
 
         prototypes, labels = self.gen_prototypes(support_features, support_gt)
 
@@ -124,18 +135,35 @@ class PrototypicalHead(torch.nn.Module):
         # print(type(prototypes))
         prototypes_norm = F.normalize(prototypes, p=2, dim=1)
 
+        # print(prototypes.shape, prototypes_norm.shape)
+        # exit(1)
+
         if query_features_norm.ndim == 2:
-            logits = (query_features_norm @ prototypes_norm.t()) * self.temp
+            logits = (query_features_norm @ prototypes_norm.t()) * self.temp.exp()
+            # a = support_features.mean(dim=0)
+            # k = support_features
+            k = prototypes_norm
+            # print(query_features_norm.shape, a.shape, support_features.shape)
+            k /= k.norm(dim=-1, keepdim=True)
+            k = k.permute(1, 0)
+            k = k.contiguous()
+            affinity = query_features_norm @ k
+            # v = F.one_hot(support_gt["labels"]).to(self.device).to(self.config.torch_dtype)
+            v = F.one_hot(labels).to(self.device).to(self.config.torch_dtype)
+            # exit(1)
+            alt_logits = (2 * affinity - 2).exp() @ v
+            # print(f"v: {v}, logits: {alt_logits}")
+            # print("=============================")
         else:
             logits = F.conv2d(
                 query_features_norm, 
                 prototypes_norm.view(-1, query_features.shape[1], 1, 1)
             ) * self.temp
 
-        return logits, labels
+        return logits, labels, alt_logits
 
     def predict(self, x, s_x, s_y):
-        logits, labels = self.forward(x, s_x, s_y)
+        logits, labels, *a = self.forward(x, s_x, s_y)
         out = None
         results = []
 
@@ -144,11 +172,15 @@ class PrototypicalHead(torch.nn.Module):
         match self.config.task:
 
             case "classification":
-                pooled_logits = F.adaptive_avg_pool2d(logits, (1, 1)).flatten(1)
-                out = labels[pooled_logits.argmax(dim=-1).cpu()].cpu().numpy()
-                for label in out:
+                pooled_logits = F.adaptive_avg_pool2d(logits, (1, 1)).flatten(1) if len(logits.shape) > 2 else logits
+                out = labels[pooled_logits.argmax(dim=-1).cpu()].numpy()
+                alt_out = labels[a[0].argmax(dim=-1).cpu()].numpy()
+                alt_out2 = labels[(a[0] * 1.1 + logits).argmax(dim=-1).cpu()].numpy()
+                for label, alt_label, alt_label2 in zip(out, alt_out, alt_out2):
                     results.append({
                         "data": label,
+                        "alt_labels": (alt_label, alt_label2),
+                        "logits": (logits, a[0], a[0] * 0.3 + logits),
                         "task": "classification",
                     })
 
@@ -196,8 +228,8 @@ class constructor_PrototypicalHead():
             if hasattr(model, "visual"): 
                 visual = model.visual
             elif hasattr(model, "visual_tower"): 
-                visual = model.visual
-            dummy_input = torch.randn(1, 3, self.args.img_h, self.args.img_w)
+                visual = model.visual_tower
+
             backbone = torch.jit.freeze(visual.eval())
 
             del model
@@ -206,6 +238,7 @@ class constructor_PrototypicalHead():
             return backbone
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model.device = device
 
         if self.args.backbone == "":
             raise ValueError("Backbone should be set either through the backbone parameter!")
@@ -216,7 +249,7 @@ class constructor_PrototypicalHead():
             model_path = Path(download(self.args.backbone))
 
         full_backbone = torch.jit.load(model_path, map_location=device)
-        model.backbone = extract_visual_encoder(full_backbone).to(device)
+        model.backbone = extract_visual_encoder(full_backbone)
 
         if self.args.load_adapter:
             current_dir = Path(__file__).resolve().parent
@@ -239,10 +272,8 @@ class constructor_PrototypicalHead():
             out_dim, in_dim = adapter_weights.shape
             model.adapter = nn.Conv2d(out_dim, in_dim, kernel_size=1).to(x.device)
             model.adapter.weight = nn.Parameter(adapter_weights)
-            target_device = next(model.backbone.parameters()).device
-            target_dtype = next(model.backbone.parameters()).dtype
 
-            model.adapter.to(device=target_device, dtype=target_dtype)
+            model.adapter.to(device=device, dtype=self.args.torch_dtype)
 
         if self.args.task == "regression":
             # TODO - load regressor
