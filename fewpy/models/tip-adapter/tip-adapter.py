@@ -117,7 +117,7 @@ class TipAdapter(nn.Module):
             cache_values = cache_dir / "values" / f"{self.config.kshot}_shots.pt"
 
             if cache_keys.exists() and cache_values.exists():
-                return torch.load(cache_keys), torch.load(cache_values)
+                return torch.load(cache_keys).cuda(), torch.load(cache_values).cuda()
             
         with torch.no_grad():
             image_features = self.encode_image(images)
@@ -141,7 +141,7 @@ class TipAdapter(nn.Module):
             torch.save(k, cache_keys)
             torch.save(v, cache_values)
 
-        return k, v
+        return k.cuda(), v.cuda()
     
     def encode_text(self, prompts, classnames):
         with torch.no_grad():
@@ -149,11 +149,9 @@ class TipAdapter(nn.Module):
             target_device = next(self.clip.parameters()).device
 
             for classname in classnames:
-                # Tokenize the prompts
                 classname = classname.replace('_', ' ')
                 texts = [t.format(classname) for t in prompts]
                 texts = tokenize(texts).to(target_device)
-                # prompt ensemble for ImageNet
                 class_embeddings = self.clip.encode_text(texts)
                 class_embeddings /= class_embeddings.norm(dim=-1, keepdim=True)
                 class_embedding = class_embeddings.mean(dim=0)
