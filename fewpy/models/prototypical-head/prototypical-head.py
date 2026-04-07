@@ -1,5 +1,5 @@
 from fewpy.models.register import register_constructor
-from fewpy.util.download import download
+from fewpy.util.download import download, BackboneFactory
 from .config import PrototypicalHeadConfig
 
 import sys
@@ -68,14 +68,24 @@ class PrototypicalHead(torch.nn.Module):
         prototypes = []
         unique_labels = torch.unique(support_gt["labels"])
 
+        # print("Labels shape:")
+        # print(support_gt["labels"].shape)
+        # print(support_gt["labels"])
+        # print("Unique Labels shape:")
+        # print(unique_labels.shape)
+        # print(unique_labels)
+
         if self.config.cache_prototypes:
             cache_dir = Path(self.config.cache_dir)
             prototypes_path = cache_dir / f"{self.config.kshot}_shot.pt"
             if prototypes_path.exists():
                 return torch.load(prototypes_path), unique_labels
-            
+
         num_aug = self.config.augement_epochs
         support_set_size = support_gt["labels"].shape[0]
+        # print(support_features.shape)
+        # print(num_aug, support_set_size)
+        assert support_features.shape[0] == num_aug * support_set_size
         if num_aug > 0:
             support_features = support_features.view(num_aug, support_set_size, -1).mean(dim=0)
         
@@ -101,8 +111,7 @@ class PrototypicalHead(torch.nn.Module):
                     else:
                         proto = feature_subset.mean(dim=0) if not is4d else feature_subset.mean(dim=[0, 2, 3])
                 case "classification":
-                    # proto = feature_subset.mean(dim=[0, 2, 3])
-                    proto = feature_subset.mean(dim=0)
+                    proto = feature_subset.mean(dim=[0, 2, 3]) if is4d else feature_subset.mean(dim=0)
 
             prototypes.append(proto)
 
@@ -123,6 +132,9 @@ class PrototypicalHead(torch.nn.Module):
         query_features = self.backbone(query)
         support_features = self.backbone(support_images)
 
+        # print("support images shape", support_images.shape)
+        # print("support features shape", support_features.shape)
+
         # assert len(query_features.shape) == 4
         # assert len(support_features.shape) == 4 
 
@@ -136,10 +148,10 @@ class PrototypicalHead(torch.nn.Module):
         prototypes_norm = F.normalize(prototypes, p=2, dim=1)
 
         # print(prototypes.shape, prototypes_norm.shape)
-        # exit(1)
 
         if query_features_norm.ndim == 2:
             logits = (query_features_norm @ prototypes_norm.t()) * self.temp.exp()
+            # print("logits shape", logits.shape)
             # a = support_features.mean(dim=0)
             # k = support_features
             k = prototypes_norm
@@ -149,9 +161,11 @@ class PrototypicalHead(torch.nn.Module):
             k = k.contiguous()
             affinity = query_features_norm @ k
             # v = F.one_hot(support_gt["labels"]).to(self.device).to(self.config.torch_dtype)
-            v = F.one_hot(labels).to(self.device).to(self.config.torch_dtype)
-            # exit(1)
+            v = F.one_hot(labels, num_classes=labels.shape[0]).to(self.device).to(self.config.torch_dtype)
+            # print("labels shape", labels.shape)
+            # print("v shape", v.shape)
             alt_logits = (2 * affinity - 2).exp() @ v
+            # print("alt logits shape", alt_logits.shape)
             # print(f"v: {v}, logits: {alt_logits}")
             # print("=============================")
         else:
@@ -174,13 +188,14 @@ class PrototypicalHead(torch.nn.Module):
             case "classification":
                 pooled_logits = F.adaptive_avg_pool2d(logits, (1, 1)).flatten(1) if len(logits.shape) > 2 else logits
                 out = labels[pooled_logits.argmax(dim=-1).cpu()].numpy()
-                alt_out = labels[a[0].argmax(dim=-1).cpu()].numpy()
-                alt_out2 = labels[(a[0] * 1.1 + logits).argmax(dim=-1).cpu()].numpy()
-                for label, alt_label, alt_label2 in zip(out, alt_out, alt_out2):
+                # alt_out = labels[a[0].argmax(dim=-1).cpu()].numpy()
+                # alt_out2 = labels[(a[0] * 1.1 + logits).argmax(dim=-1).cpu()].numpy()
+                # for label, alt_label, alt_label2 in zip(out, alt_out, alt_out2):
+                for label in out:
                     results.append({
                         "data": label,
-                        "alt_labels": (alt_label, alt_label2),
-                        "logits": (logits, a[0], a[0] * 0.3 + logits),
+                        # "alt_labels": (alt_label, alt_label2),
+                        # "logits": (logits, a[0], a[0] * 0.3 + logits),
                         "task": "classification",
                     })
 
@@ -229,6 +244,8 @@ class constructor_PrototypicalHead():
                 visual = model.visual
             elif hasattr(model, "visual_tower"): 
                 visual = model.visual_tower
+            else:
+                return model
 
             backbone = torch.jit.freeze(visual.eval())
 
@@ -246,34 +263,43 @@ class constructor_PrototypicalHead():
         current_dir = Path(__file__).resolve().parent
         model_path = current_dir / "weights" / f"{self.args.backbone}.pt"
         if not model_path.exists():
-            model_path = Path(download(self.args.backbone))
+            if self.args.backbone in BackboneFactory.STANDARD_MODELS:
+                # print(f"Fewpy: '{self.args.backbone}' is a standard backbone, downloading and loading the model...")
+                backbone_model = BackboneFactory.get_backbone(self.args.backbone)
+                backbone_model = torch.jit.trace(backbone_model, torch.randn(1, 3, 224, 224).to(device))
+                model.backbone = torch.jit.freeze(backbone_model.eval())
+            else:   
+                model_path = Path(download(self.args.backbone))
+                full_backbone = torch.jit.load(model_path, map_location=device)
+                model.backbone = extract_visual_encoder(full_backbone)
+        else:
+            # print(f"Fewpy: Found backbone weights at '{model_path}', loading the model...")
+            full_backbone = torch.jit.load(model_path, map_location=device)
+            model.backbone = extract_visual_encoder(full_backbone)
 
-        full_backbone = torch.jit.load(model_path, map_location=device)
-        model.backbone = extract_visual_encoder(full_backbone)
+        # if self.args.load_adapter:
+        #     current_dir = Path(__file__).resolve().parent
+        #     model_path = current_dir / "weights"
+        #     checkpoint_path = model_path.parent / "tip_adapter.pth"
 
-        if self.args.load_adapter:
-            current_dir = Path(__file__).resolve().parent
-            model_path = current_dir / "weights"
-            checkpoint_path = model_path.parent / "tip_adapter.pth"
-
-            if not checkpoint_path.exists():
-                raise FileNotFoundError(f"Adapter weights not found at {checkpoint_path}")
+        #     if not checkpoint_path.exists():
+        #         raise FileNotFoundError(f"Adapter weights not found at {checkpoint_path}")
             
-            checkpoint = torch.load(checkpoint_path)
-            k1, k2 = "adapter.weight", "weight"
-            if k1 in checkpoint.keys():
-                adapter_weights = checkpoint[k1]
-            elif k2 in checkpoint.keys():
-                adapter_weights = checkpoint[k2]
-            else:
-                e = f"Could not find adapter weights in state_dict! Weights must be under {k1} or {k2}"
-                raise KeyError(e)
+        #     checkpoint = torch.load(checkpoint_path)
+        #     k1, k2 = "adapter.weight", "weight"
+        #     if k1 in checkpoint.keys():
+        #         adapter_weights = checkpoint[k1]
+        #     elif k2 in checkpoint.keys():
+        #         adapter_weights = checkpoint[k2]
+        #     else:
+        #         e = f"Could not find adapter weights in state_dict! Weights must be under {k1} or {k2}"
+        #         raise KeyError(e)
             
-            out_dim, in_dim = adapter_weights.shape
-            model.adapter = nn.Conv2d(out_dim, in_dim, kernel_size=1).to(x.device)
-            model.adapter.weight = nn.Parameter(adapter_weights)
+        #     out_dim, in_dim = adapter_weights.shape
+        #     model.adapter = nn.Conv2d(out_dim, in_dim, kernel_size=1).to(x.device)
+        #     model.adapter.weight = nn.Parameter(adapter_weights)
 
-            model.adapter.to(device=device, dtype=self.args.torch_dtype)
+        #     model.adapter.to(device=device, dtype=self.args.torch_dtype)
 
         if self.args.task == "regression":
             # TODO - load regressor
