@@ -96,7 +96,8 @@ class FSLDataset(Dataset):
                 self.detection_crop(True)
 
             case PreprocessingMethod.AUGMENT_SUPPORT_IMAGES:
-                epochs = kwargs["epochs"] if "epochs" in kwargs else 4
+                epochs = kwargs["epochs"] if "epochs" in kwargs else kwargs.get("augment_epochs", 12)
+
                 self.augment_support_images(epochs)
 
             case PreprocessingMethod.NONE:
