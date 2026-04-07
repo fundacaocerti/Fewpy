@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from urllib.request import urlopen
 
+import torch
+
 from typing import List, Union
 
 from tqdm import tqdm
@@ -78,7 +80,7 @@ def download(
             total=int(source.headers.get("Content-Length")),
             ncols=80,
             unit="iB",
-            unit_scale=True,
+            unit_scale=True,    
         ) as loop:
             while True:
                 buffer = source.read(8192)
@@ -99,3 +101,68 @@ def download(
         download_target = download_target.rename(f"{download_target.parent / new_name}{download_target.suffix}")
 
     return str(download_target)
+
+import torch
+import torchvision.models as models
+
+class BackboneFactory:
+    STANDARD_MODELS = {
+        "resnet18": models.resnet18,
+        "resnet50": models.resnet50,
+        "mobilenet_v3": models.mobilenet_v3_small,
+        "vit_b_16": models.vit_b_16,
+    }
+
+    @staticmethod
+    def extract_visual_encoder(model, device):
+        
+        extracted = False
+        if hasattr(model, "fc"): 
+            model.fc = torch.nn.Identity()
+            extracted = True
+        if hasattr(model, "head"): 
+            model.head = torch.nn.Identity()
+            extracted = True
+
+        if extracted: return model
+
+        visual = None
+        if hasattr(model, "visual"): 
+            visual = model.visual
+        elif hasattr(model, "visual_tower"): 
+            visual = model.visual_tower
+        else:
+            return model
+
+        visual = torch.jit.trace(visual, torch.randn(1, 3, 224, 224).to(device))
+        backbone = torch.jit.freeze(visual.eval())
+
+        del model
+        torch.cuda.empty_cache()
+
+        return backbone
+
+    @classmethod
+    def get_backbone(cls, model_identifier: str):
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        if model_identifier.lower() in cls.STANDARD_MODELS:
+            print(f"Fewpy: Loading standard backbone '{model_identifier}' with ImageNet weights...")
+            
+            constructor = cls.STANDARD_MODELS[model_identifier.lower()]
+            model = constructor(weights="DEFAULT")
+            
+            model = cls.extract_visual_encoder(model, device)
+            
+            return model.to(device)
+        elif model_identifier in model2url:
+            
+            print(f"Fewpy: Downloading and loading backbone '{model_identifier}' from OpenAI's CLIP repository...")
+            model_path = Path(download(model_identifier, cache_dir="./cache"))
+
+            model = torch.jit.load(model_path).eval().to(device)
+            backbone = cls.extract_visual_encoder(model, device)
+
+            return backbone
+    
+        raise ValueError(f"Identifier '{model_identifier}' is not a standard model.")

@@ -237,23 +237,6 @@ class constructor_PrototypicalHead():
 
     def load_weights(self, model):
 
-        def extract_visual_encoder(model):
-            
-            visual = None
-            if hasattr(model, "visual"): 
-                visual = model.visual
-            elif hasattr(model, "visual_tower"): 
-                visual = model.visual_tower
-            else:
-                return model
-
-            backbone = torch.jit.freeze(visual.eval())
-
-            del model
-            torch.cuda.empty_cache()
-
-            return backbone
-
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model.device = device
 
@@ -263,19 +246,12 @@ class constructor_PrototypicalHead():
         current_dir = Path(__file__).resolve().parent
         model_path = current_dir / "weights" / f"{self.args.backbone}.pt"
         if not model_path.exists():
-            if self.args.backbone in BackboneFactory.STANDARD_MODELS:
-                # print(f"Fewpy: '{self.args.backbone}' is a standard backbone, downloading and loading the model...")
-                backbone_model = BackboneFactory.get_backbone(self.args.backbone)
-                backbone_model = torch.jit.trace(backbone_model, torch.randn(1, 3, 224, 224).to(device))
-                model.backbone = torch.jit.freeze(backbone_model.eval())
-            else:   
-                model_path = Path(download(self.args.backbone))
-                full_backbone = torch.jit.load(model_path, map_location=device)
-                model.backbone = extract_visual_encoder(full_backbone)
+            # print(f"Fewpy: '{self.args.backbone}' is a standard backbone, downloading and loading the model...")
+            model.backbone = BackboneFactory.get_backbone(self.args.backbone)
         else:
             # print(f"Fewpy: Found backbone weights at '{model_path}', loading the model...")
             full_backbone = torch.jit.load(model_path, map_location=device)
-            model.backbone = extract_visual_encoder(full_backbone)
+            model.backbone = BackboneFactory.extract_visual_encoder(full_backbone)
 
         # if self.args.load_adapter:
         #     current_dir = Path(__file__).resolve().parent
