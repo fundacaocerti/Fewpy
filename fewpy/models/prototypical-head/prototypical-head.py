@@ -132,14 +132,11 @@ class PrototypicalHead(torch.nn.Module):
         query_features = self.backbone(query)
         support_features = self.backbone(support_images)
 
+        # query_features = F.normalize(query_features, p=2, dim=1)
+        # support_features = F.normalize(support_features, p=2, dim=1)
+
         # print("support images shape", support_images.shape)
         # print("support features shape", support_features.shape)
-
-        # assert len(query_features.shape) == 4
-        # assert len(support_features.shape) == 4 
-
-        # print("images shape", support_images.shape)
-        # print("features shape", support_features.shape)
 
         prototypes, labels = self.gen_prototypes(support_features, support_gt)
 
@@ -247,11 +244,11 @@ class constructor_PrototypicalHead():
         model_path = current_dir / "weights" / f"{self.args.backbone}.pt"
         if not model_path.exists():
             # print(f"Fewpy: '{self.args.backbone}' is a standard backbone, downloading and loading the model...")
-            model.backbone = BackboneFactory.get_backbone(self.args.backbone)
+            model.backbone = BackboneFactory.get_backbone(self.args.backbone, keep_avg_pool=self.args.task == "classification")
         else:
             # print(f"Fewpy: Found backbone weights at '{model_path}', loading the model...")
             full_backbone = torch.jit.load(model_path, map_location=device)
-            model.backbone = BackboneFactory.extract_visual_encoder(full_backbone)
+            model.backbone = BackboneFactory.extract_visual_encoder(full_backbone, keep_avg_pool=self.args.task == "classification", device=device)
 
         # if self.args.load_adapter:
         #     current_dir = Path(__file__).resolve().parent

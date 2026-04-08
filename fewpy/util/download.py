@@ -114,7 +114,7 @@ class BackboneFactory:
     }
 
     @staticmethod
-    def extract_visual_encoder(model, device):
+    def extract_visual_encoder(model, device, keep_avg_pool=False):
         
         extracted = False
         if hasattr(model, "fc"): 
@@ -122,6 +122,9 @@ class BackboneFactory:
             extracted = True
         if hasattr(model, "head"): 
             model.head = torch.nn.Identity()
+            extracted = True
+        if hasattr(model, "avgpool") and not keep_avg_pool:
+            model.avgpool = torch.nn.Identity()
             extracted = True
 
         if extracted: return model
@@ -143,7 +146,7 @@ class BackboneFactory:
         return backbone
 
     @classmethod
-    def get_backbone(cls, model_identifier: str):
+    def get_backbone(cls, model_identifier: str, keep_avg_pool: bool = False, cache_dir: str = "./cache"):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         if model_identifier.lower() in cls.STANDARD_MODELS:
@@ -152,16 +155,16 @@ class BackboneFactory:
             constructor = cls.STANDARD_MODELS[model_identifier.lower()]
             model = constructor(weights="DEFAULT")
             
-            model = cls.extract_visual_encoder(model, device)
+            model = cls.extract_visual_encoder(model, device, keep_avg_pool=keep_avg_pool)
             
             return model.to(device)
         elif model_identifier in model2url:
             
             print(f"Fewpy: Downloading and loading backbone '{model_identifier}' from OpenAI's CLIP repository...")
-            model_path = Path(download(model_identifier, cache_dir="./cache"))
+            model_path = Path(download(model_identifier, cache_dir=cache_dir))
 
             model = torch.jit.load(model_path).eval().to(device)
-            backbone = cls.extract_visual_encoder(model, device)
+            backbone = cls.extract_visual_encoder(model, device, keep_avg_pool=keep_avg_pool)
 
             return backbone
     
