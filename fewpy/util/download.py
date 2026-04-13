@@ -137,7 +137,8 @@ class BackboneFactory:
         else:
             return model
 
-        visual = torch.jit.trace(visual, torch.randn(1, 3, 224, 224).to(device))
+        if not isinstance(model, torch.jit.ScriptModule):
+            visual = torch.jit.trace(visual, torch.randn(1, 3, 224, 224).to(device))
         backbone = torch.jit.freeze(visual.eval())
 
         del model
@@ -162,7 +163,6 @@ class BackboneFactory:
             
             print(f"Fewpy: Downloading and loading backbone '{model_identifier}' from OpenAI's CLIP repository...")
             model_path = Path(download(model_identifier, cache_dir=cache_dir))
-
             model = torch.jit.load(model_path).eval().to(device)
             backbone = cls.extract_visual_encoder(model, device, keep_avg_pool=keep_avg_pool)
 

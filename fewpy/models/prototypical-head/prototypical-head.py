@@ -25,6 +25,9 @@ class PrototypicalHead(torch.nn.Module):
         self.backbone = None
         self.adapter = None 
         self.temp = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+        self.class_scales = nn.Parameter(torch.zeros(
+            self.config.n_classes, 
+            self.config.embedding_size)) if self.task == "classification" else None
         self.regressor = None
     
     def _apply_nms(self, bboxes, scores, class_ids, iou_threshold):
@@ -37,29 +40,27 @@ class PrototypicalHead(torch.nn.Module):
         super().train(mode)
         self.backbone.eval()
 
-        if self.adapter is not None:
-            self.adapter.train(mode)
+        if self.class_scales is not None:
+            self.class_scales.requires_grad_(mode)
+        
+        self.temp.requires_grad_(mode)
 
         return self
     
     def parameters(self, recurse = True):
         params = []
-        if self.adapter is not None:
-            params += self.adapter.parameters(recurse)
 
-        if self.regressor is not None:
-            params += self.regressor.parameters(recurse)
+        params += self.temp.parameters(recurse)
+        params += self.class_scales.parameters(recurse) if self.class_scales is not None else []
 
         return params
         
     def named_parameters(self, prefix = "", recurse = True, remove_duplicate = True):
         
         params = []
-        if self.adapter is not None:
-            params += self.adapter.named_parameters(prefix, recurse, remove_duplicate)
 
-        if self.regressor is not None:
-            params += self.regressor.pnamed_arameters(prefix, recurse, remove_duplicate)
+        params += self.temp.named_parameters(prefix, recurse)
+        params += [(prefix + "class_scales", self.class_scales)] if self.class_scales is not None else []
 
         return params
 
@@ -68,23 +69,14 @@ class PrototypicalHead(torch.nn.Module):
         prototypes = []
         unique_labels = torch.unique(support_gt["labels"])
 
-        # print("Labels shape:")
-        # print(support_gt["labels"].shape)
-        # print(support_gt["labels"])
-        # print("Unique Labels shape:")
-        # print(unique_labels.shape)
-        # print(unique_labels)
-
         if self.config.cache_prototypes:
             cache_dir = Path(self.config.cache_dir)
             prototypes_path = cache_dir / f"{self.config.kshot}_shot.pt"
             if prototypes_path.exists():
                 return torch.load(prototypes_path), unique_labels
 
-        num_aug = self.config.augement_epochs
+        num_aug = self.config.augment_epochs
         support_set_size = support_gt["labels"].shape[0]
-        # print(support_features.shape)
-        # print(num_aug, support_set_size)
         assert support_features.shape[0] == num_aug * support_set_size
         if num_aug > 0:
             support_features = support_features.view(num_aug, support_set_size, -1).mean(dim=0)
@@ -92,26 +84,8 @@ class PrototypicalHead(torch.nn.Module):
         for label in unique_labels:
             mask = (support_gt["labels"] == label)
             feature_subset = support_features[mask]
-
-            is4d = len(feature_subset.shape) == 4
             
-            match self.config.task:
-                case "detection":
-                    if is4d and "bboxes" in support_gt:
-                        boxes_subset = support_gt["bboxes"][mask]
-                        roi_feat = roi_align(feature_subset, boxes_subset, output_size=(7, 7), spatial_scale=1.0)
-                        proto = roi_feat.mean(dim=[0, 2, 3]) 
-                    else:
-                        proto = feature_subset.mean(dim=0) if not is4d else feature_subset.mean(dim=[0, 2, 3])
-                case "segmentation":
-                    if is4d and "masks" in support_gt:
-                        mask_subset = support_gt["masks"][mask].unsqueeze(1) 
-                        mask_subset = F.interpolate(mask_subset, size=feature_subset.shape[-2:], mode='nearest')
-                        proto = (feature_subset * mask_subset).sum(dim=[0, 2, 3]) / (mask_subset.sum() + 1e-6)
-                    else:
-                        proto = feature_subset.mean(dim=0) if not is4d else feature_subset.mean(dim=[0, 2, 3])
-                case "classification":
-                    proto = feature_subset.mean(dim=[0, 2, 3]) if is4d else feature_subset.mean(dim=0)
+            proto = feature_subset.mean(dim=0)
 
             prototypes.append(proto)
 
@@ -132,92 +106,51 @@ class PrototypicalHead(torch.nn.Module):
         query_features = self.backbone(query)
         support_features = self.backbone(support_images)
 
-        # query_features = F.normalize(query_features, p=2, dim=1)
-        # support_features = F.normalize(support_features, p=2, dim=1)
-
-        # print("support images shape", support_images.shape)
-        # print("support features shape", support_features.shape)
+        # L2 Normalization of support features
+        support_features = F.normalize(support_features, p=2, dim=1)
 
         prototypes, labels = self.gen_prototypes(support_features, support_gt)
+        # labels = torch.unique(support_gt["labels"])
 
         query_features_norm = F.normalize(query_features, p=2, dim=1)
-        # print(type(prototypes))
         prototypes_norm = F.normalize(prototypes, p=2, dim=1)
 
-        # print(prototypes.shape, prototypes_norm.shape)
-
-        if query_features_norm.ndim == 2:
-            logits = (query_features_norm @ prototypes_norm.t()) * self.temp.exp()
-            # print("logits shape", logits.shape)
-            # a = support_features.mean(dim=0)
-            # k = support_features
-            k = prototypes_norm
-            # print(query_features_norm.shape, a.shape, support_features.shape)
-            k /= k.norm(dim=-1, keepdim=True)
-            k = k.permute(1, 0)
-            k = k.contiguous()
-            affinity = query_features_norm @ k
-            # v = F.one_hot(support_gt["labels"]).to(self.device).to(self.config.torch_dtype)
-            v = F.one_hot(labels, num_classes=labels.shape[0]).to(self.device).to(self.config.torch_dtype)
-            # print("labels shape", labels.shape)
-            # print("v shape", v.shape)
-            alt_logits = (2 * affinity - 2).exp() @ v
-            # print("alt logits shape", alt_logits.shape)
-            # print(f"v: {v}, logits: {alt_logits}")
-            # print("=============================")
-        else:
-            logits = F.conv2d(
-                query_features_norm, 
-                prototypes_norm.view(-1, query_features.shape[1], 1, 1)
-            ) * self.temp
-
-        return logits, labels, alt_logits
+        # [B, 1, D] - [1, K, D] -> [B, K, D]
+        diff = query_features_norm.unsqueeze(1) - prototypes_norm.unsqueeze(0)
+        
+        precision = torch.exp(self.class_scales) # [K, D]
+        
+        dist_sq = torch.sum((diff ** 2) * precision.unsqueeze(0), dim=-1) # [B, K]
+        logits = -dist_sq * self.temp.exp() # [B, K]
+        # logits = (query_features_norm @ prototypes_norm.t()) * self.temp.exp()
+        # k = prototypes_norm
+        # k = support_features.view(
+        #     self.config.augment_epochs, support_gt["labels"].shape[0], -1,
+        # ).mean(dim=0)
+        # k /= k.norm(dim=-1, keepdim=True)
+        # k = k.permute(1, 0)
+        # k = k.contiguous()
+        # affinity = query_features_norm @ k
+        # v = F.one_hot(support_gt["labels"], num_classes=labels.shape[0]).to(self.device).to(self.config.torch_dtype)
+        # logits = (2 * affinity - 2).exp() @ v
+            
+        return logits, labels
 
     def predict(self, x, s_x, s_y):
-        logits, labels, *a = self.forward(x, s_x, s_y)
+        logits, labels = self.forward(x, s_x, s_y)
         out = None
         results = []
 
-        # print("LOGITS:", logits.shape)
+        if self.training:
+            return logits
 
-        match self.config.task:
+        out = labels[logits.argmax(dim=-1)]
+        for label in out:
+            results.append({
+                "data": label,
+                "task": "classification",
+            })
 
-            case "classification":
-                pooled_logits = F.adaptive_avg_pool2d(logits, (1, 1)).flatten(1) if len(logits.shape) > 2 else logits
-                out = labels[pooled_logits.argmax(dim=-1).cpu()].numpy()
-                # alt_out = labels[a[0].argmax(dim=-1).cpu()].numpy()
-                # alt_out2 = labels[(a[0] * 1.1 + logits).argmax(dim=-1).cpu()].numpy()
-                # for label, alt_label, alt_label2 in zip(out, alt_out, alt_out2):
-                for label in out:
-                    results.append({
-                        "data": label,
-                        # "alt_labels": (alt_label, alt_label2),
-                        # "logits": (logits, a[0], a[0] * 0.3 + logits),
-                        "task": "classification",
-                    })
-
-            case "segmentation":
-                full_res_logits = F.interpolate(logits, size=x.shape[-2:], mode='bilinear', align_corners=False)
-                out = full_res_logits.argmax(dim=1).cpu().numpy()
-                for segment in out:
-                    results.append({
-                        "data": segment,
-                        "task": "segmentation",
-                    })
-
-            case "detection":
-                out = logits.cpu().numpy()
-                bboxes, scores, class_ids = self.regressor(out)
-                bboxes, scores, class_ids = self._apply_nms(
-                    bboxes,
-                    scores,
-                    class_ids,
-                    self.config.detection_threshold,
-                )
-            
-            case _:
-                raise ValueError("Task Should be classification, segmentation or detection")
-        
         return results
 
 
@@ -238,45 +171,22 @@ class constructor_PrototypicalHead():
         model.device = device
 
         if self.args.backbone == "":
-            raise ValueError("Backbone should be set either through the backbone parameter!")
+            raise ValueError("Backbone should be set through the backbone parameter!")
         
-        current_dir = Path(__file__).resolve().parent
-        model_path = current_dir / "weights" / f"{self.args.backbone}.pt"
+        main_dir = Path(__file__).resolve().parent
+        model_path = main_dir / "weights" / f"{self.args.backbone}.pt"
         if not model_path.exists():
-            # print(f"Fewpy: '{self.args.backbone}' is a standard backbone, downloading and loading the model...")
-            model.backbone = BackboneFactory.get_backbone(self.args.backbone, keep_avg_pool=self.args.task == "classification")
+            main_dir = Path(sys.path[0])
+            model_path = main_dir / "weights" / f"{self.args.backbone}.pt"
+        if not model_path.exists():
+            model.backbone = BackboneFactory.get_backbone(
+                self.args.backbone, 
+                keep_avg_pool=self.args.task == "classification",
+                cache_dir=main_dir,
+            )
         else:
-            # print(f"Fewpy: Found backbone weights at '{model_path}', loading the model...")
             full_backbone = torch.jit.load(model_path, map_location=device)
             model.backbone = BackboneFactory.extract_visual_encoder(full_backbone, keep_avg_pool=self.args.task == "classification", device=device)
-
-        # if self.args.load_adapter:
-        #     current_dir = Path(__file__).resolve().parent
-        #     model_path = current_dir / "weights"
-        #     checkpoint_path = model_path.parent / "tip_adapter.pth"
-
-        #     if not checkpoint_path.exists():
-        #         raise FileNotFoundError(f"Adapter weights not found at {checkpoint_path}")
-            
-        #     checkpoint = torch.load(checkpoint_path)
-        #     k1, k2 = "adapter.weight", "weight"
-        #     if k1 in checkpoint.keys():
-        #         adapter_weights = checkpoint[k1]
-        #     elif k2 in checkpoint.keys():
-        #         adapter_weights = checkpoint[k2]
-        #     else:
-        #         e = f"Could not find adapter weights in state_dict! Weights must be under {k1} or {k2}"
-        #         raise KeyError(e)
-            
-        #     out_dim, in_dim = adapter_weights.shape
-        #     model.adapter = nn.Conv2d(out_dim, in_dim, kernel_size=1).to(x.device)
-        #     model.adapter.weight = nn.Parameter(adapter_weights)
-
-        #     model.adapter.to(device=device, dtype=self.args.torch_dtype)
-
-        if self.args.task == "regression":
-            # TODO - load regressor
-            ...
 
         if self.args.training:
         
