@@ -47,22 +47,16 @@ class PrototypicalHead(torch.nn.Module):
 
         return self
     
-    def parameters(self, recurse = True):
-        params = []
+    def named_parameters(self, prefix='', recurse=True, remove_duplicate=True):
 
-        params += self.temp.parameters(recurse)
-        params += self.class_scales.parameters(recurse) if self.class_scales is not None else []
+        for name, param in super().named_parameters(prefix, recurse, remove_duplicate):
+            if "backbone" not in name and param.requires_grad:
+                yield name, param
 
-        return params
+    def parameters(self, recurse=True):
         
-    def named_parameters(self, prefix = "", recurse = True, remove_duplicate = True):
-        
-        params = []
-
-        params += self.temp.named_parameters(prefix, recurse)
-        params += [(prefix + "class_scales", self.class_scales)] if self.class_scales is not None else []
-
-        return params
+        for _, param in self.named_parameters(recurse=recurse):
+            yield param
 
     def gen_prototypes(self, support_features, support_gt):
 
