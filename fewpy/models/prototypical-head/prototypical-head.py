@@ -27,7 +27,7 @@ class PrototypicalHead(torch.nn.Module):
         self.temp = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
         self.class_scales = nn.Parameter(torch.zeros(
             self.config.n_classes, 
-            self.config.embedding_size)) if self.task == "classification" else None
+            self.config.embedding_size)) if self.config.task == "classification" else None
         self.regressor = None
     
     def _apply_nms(self, bboxes, scores, class_ids, iou_threshold):
