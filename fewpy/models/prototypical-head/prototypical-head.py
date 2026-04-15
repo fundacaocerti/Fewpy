@@ -28,12 +28,11 @@ class PrototypicalHead(torch.nn.Module):
         self.class_scales = nn.Parameter(torch.zeros(
             self.config.n_classes, 
             self.config.embedding_size)) if self.config.task == "classification" else None
-        self.regressor = None
-    
-    def _apply_nms(self, bboxes, scores, class_ids, iou_threshold):
+        
+    # def _apply_nms(self, bboxes, scores, class_ids, iou_threshold):
 
-        keep = batched_nms(bboxes, scores, class_ids, iou_threshold)
-        return bboxes[keep], scores[keep], class_ids[keep]
+    #     keep = batched_nms(bboxes, scores, class_ids, iou_threshold)
+    #     return bboxes[keep], scores[keep], class_ids[keep]
     
     def train(self, mode = True):
 
@@ -137,6 +136,20 @@ class PrototypicalHead(torch.nn.Module):
         # affinity = query_features_norm @ k
         # v = F.one_hot(support_gt, num_classes=labels.shape[0]).to(self.device).to(self.config.torch_dtype)
         # logits = (2 * affinity - 2).exp() @ v
+
+        if self.textual is not None and len(prompts) > 0 and len(classnames) > 0:
+            with torch.no_grad():
+                textual_features = []
+                for classname in classnames:
+                    prompt = prompts[0].format(classname)
+                    text_tokens = self.textual.tokenize([prompt]).to(self.device)
+                    text_features = self.textual.encode_text(text_tokens).float()
+                    text_features = F.normalize(text_features, p=2, dim=-1)
+                    textual_features.append(text_features.squeeze(0))
+                textual_features = torch.stack(textual_features)
+
+            textual_logits = (query_features_norm @ textual_features.t()) * self.temp.exp()
+            logits += textual_logits * self.config.textual_scale
             
         return logits, labels
 
@@ -199,9 +212,7 @@ class constructor_PrototypicalHead():
         parent_path = model_path.parent
         for state_dict_path in model_path.parent.glob("*.pth"):
             state_dict = torch.load(state_dict_path)
-            if "temp" in state_dict \
-                or "textual" in state_dict \
-                    or "class_scales" in state_dict:
+            if "temp" in state_dict or "class_scales" in state_dict:
                 try:
                     model.load_state_dict(state_dict)
                     # print("Success with", state_dict_path)
