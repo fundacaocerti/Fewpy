@@ -50,7 +50,7 @@ def download(
     else:
         expected_sha256 = ""
 
-    download_target = cache_dir / filename
+    download_target = cache_dir / filename.replace("/", "-")
 
     if download_target.exists() and not download_target.is_file():
         raise RuntimeError(
@@ -114,37 +114,43 @@ class BackboneFactory:
     }
 
     @staticmethod
-    def extract_visual_encoder(model, device, keep_avg_pool=False):
+    def extract_encoders(model, device, keep_avg_pool=False, dummy_input_size=(1, 3, 224, 224)):
+
+        def extract_encoder(names: list[str]):
+            
+            encoder = None
+            for name in names:
+                if hasattr(model, name):
+                    encoder = getattr(model, name)
+                    break
+
+            if encoder is None:
+                return None
+
+            if not isinstance(model, torch.jit.ScriptModule):
+                encoder = torch.jit.trace(encoder, torch.randn(dummy_input_size).to(device))
+
+            del model
+            torch.cuda.empty_cache()
+
+            return torch.jit.freeze(encoder.eval())
         
-        extracted = False
         if hasattr(model, "fc"): 
             model.fc = torch.nn.Identity()
-            extracted = True
         if hasattr(model, "head"): 
             model.head = torch.nn.Identity()
-            extracted = True
         if hasattr(model, "avgpool") and not keep_avg_pool:
             model.avgpool = torch.nn.Identity()
-            extracted = True
 
-        if extracted: return model
+        textual = extract_encoder(["textual", "text_encoder", "transformer"])
+        backbone = extract_encoder(["visual", "visual_tower", "vision_transformer", "visual_encoder", "visual_backbone"])
 
-        visual = None
-        if hasattr(model, "visual"): 
-            visual = model.visual
-        elif hasattr(model, "visual_tower"): 
-            visual = model.visual_tower
-        else:
-            return model
-
-        if not isinstance(model, torch.jit.ScriptModule):
-            visual = torch.jit.trace(visual, torch.randn(1, 3, 224, 224).to(device))
-        backbone = torch.jit.freeze(visual.eval())
-
-        del model
-        torch.cuda.empty_cache()
-
-        return backbone
+        txt_is_none = textual is None
+        backbone_is_none = backbone is None
+        if not txt_is_none or not backbone_is_none:
+            return backbone, textual
+        
+        return model, None
 
     @classmethod
     def get_backbone(cls, model_identifier: str, keep_avg_pool: bool = False, cache_dir: str = "./cache"):
@@ -156,16 +162,17 @@ class BackboneFactory:
             constructor = cls.STANDARD_MODELS[model_identifier.lower()]
             model = constructor(weights="DEFAULT")
             
-            model = cls.extract_visual_encoder(model, device, keep_avg_pool=keep_avg_pool)
+            model, _ = cls.extract_visual_encoder(model, device, keep_avg_pool=keep_avg_pool)
             
-            return model.to(device)
+            return model.to(device), None
         elif model_identifier in model2url:
             
             print(f"Fewpy: Downloading and loading backbone '{model_identifier}' from OpenAI's CLIP repository...")
             model_path = Path(download(model_identifier, cache_dir=cache_dir))
             model = torch.jit.load(model_path).eval().to(device)
-            backbone = cls.extract_visual_encoder(model, device, keep_avg_pool=keep_avg_pool)
+            # print(model)
+            backbone, textual = cls.extract_visual_encoder(model, device, keep_avg_pool=keep_avg_pool)
 
-            return backbone
+            return backbone, textual
     
         raise ValueError(f"Identifier '{model_identifier}' is not a standard model.")

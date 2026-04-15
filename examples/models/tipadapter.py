@@ -11,22 +11,18 @@ from tqdm import tqdm
 
 
 # prepare support and query data 
-K = 10
-n = 4
-CLASSES = ("bottle", "sofa")
-epochs = 5
+K = 1
+n = 128
+CLASSES = ("bottle", "sofa", "bird", "dog", "cat", "horse", "sheep", "cow")
 batch_size = 4
 IMG_SIZE = 224
-cls2int = {
-    "bottle": 0,
-    "sofa": 1,
-}
+cls2int = {k: i for i, k in enumerate(CLASSES)}
 
 dataset = Path("./testdata2").expanduser()
 annotations = dataset / "selected_annot" 
 images = dataset / "selected_img"
 
-counter = [0] * 2
+counter = [0] * len(CLASSES)
 
 annotations = list(annotations.glob("*.xml"))
 
@@ -81,7 +77,7 @@ alpha: float, scales clip logits when combining the logits to gen the final pred
 show_logits: bool, flag for outputing logits along with final prediction
 """
 args = {
-    "kshot": 10,
+    "kshot": K,
     "clip_model": "ViT-B/32",
     "augment_epoch": 12,
     "show_logits": True
@@ -135,8 +131,21 @@ for batch, s_x, s_y in tqdm(dl):
         prompts=["an image of one or more objects of type {}"]
     )
 
+
+class_counter = [0] * len(CLASSES)
+class_correct_prediction_counter = [0] * len(CLASSES)
 for i, prediction in enumerate(results):
 
-    print(f"For object {i}, of class {query_targets[i]}:")
-    print(f"The model predicted class {prediction["data"]}")
-    print(f"Final logits: {prediction["logits"]}\n")
+    # print(f"For object {i}, of class {query_targets[i]}:")
+    # print(f"The model predicted class {prediction["data"]}")
+    # print(f"Final logits: {prediction["logits"]}\n")
+    class_counter[query_targets[i]["cls"]]+= 1
+    if prediction["data"] == query_targets[i]["cls"]:
+        class_correct_prediction_counter[query_targets[i]["cls"]] += 1
+
+for name, cls_id in cls2int.items():
+    correct = class_correct_prediction_counter[cls_id]
+    total = class_counter[cls_id]
+    print(f"On class {name} of class id {cls_id} accuracy of {correct} / {total}")
+
+print(f"Overall acc: {sum(class_correct_prediction_counter)} / {sum(class_counter)}")

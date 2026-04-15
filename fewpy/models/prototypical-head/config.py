@@ -19,7 +19,8 @@ class PrototypicalHeadConfig(BaseModel):
         default="float32", 
         description="Precision to use: 'float32', 'float16', or 'bfloat16'"
     )
-    augment_epochs: int = Field(default=0, description="Number of epochs the support set is augmented")
+    textual_scale: float = Field(default=1.0, description="Scale for textual features when combining with visual features")
+    augment_epoch: int = Field(default=0, description="Number of epochs the support set is augmented")
 
     @property
     def torch_dtype(self) -> torch.dtype:
