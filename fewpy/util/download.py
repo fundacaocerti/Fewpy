@@ -105,6 +105,43 @@ def download(
 import torch
 import torchvision.models as models
 
+# x = self.token_embedding(text).type(self.dtype)  # [batch_size, n_ctx, d_model]
+
+# x = x + self.positional_embedding.type(self.dtype)
+# x = x.permute(1, 0, 2)  # NLD -> LND
+# x = self.transformer(x)
+# x = x.permute(1, 0, 2)  # LND -> NLD
+# x = self.ln_final(x).type(self.dtype)
+
+# # x.shape = [batch_size, n_ctx, transformer.width]
+# # take features from the eot embedding (eot_token is the highest number in each sequence)
+# x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.text_projection
+
+# return x
+
+class TextualWrapper(torch.nn.Module):
+    """Wraps the full textual pipeline into a single module."""
+    def __init__(self, token_embedding, transformer, ln_final):
+        super().__init__()
+        self.token_embedding = token_embedding
+        self.transformer = transformer
+        self.ln_final = ln_final
+        self.positional_embedding = None
+        self.text_projection = None
+
+    def forward(self, text_tokens: torch.Tensor) -> torch.Tensor:
+        x = self.token_embedding(text_tokens).type(self.dtype)  # [batch_size, n_ctx, d_model]
+
+        x = x + self.positional_embedding.type(self.dtype)
+        x = x.permute(1, 0, 2) 
+        x = self.transformer(x)
+        x = x.permute(1, 0, 2)
+        x = self.ln_final(x).type(self.dtype)
+
+        x = x[torch.arange(x.shape[0]), text_tokens.argmax(dim=-1)] @ self.text_projection
+
+        return x
+
 class BackboneFactory:
     STANDARD_MODELS = {
         "resnet18": models.resnet18,
@@ -117,40 +154,44 @@ class BackboneFactory:
     def extract_encoders(model, device, keep_avg_pool=False, dummy_input_size=(1, 3, 224, 224)):
 
         def extract_encoder(names: list[str]):
-            
             encoder = None
             for name in names:
                 if hasattr(model, name):
                     encoder = getattr(model, name)
                     break
+            return encoder
 
-            if encoder is None:
-                return None
-
-            if not isinstance(model, torch.jit.ScriptModule):
-                encoder = torch.jit.trace(encoder, torch.randn(dummy_input_size).to(device))
-
-            del model
-            torch.cuda.empty_cache()
-
-            return torch.jit.freeze(encoder.eval())
+        if hasattr(backbone, "fc"): backbone.fc = torch.nn.Identity()
+        if hasattr(backbone, "head"): backbone.head = torch.nn.Identity()
+        if hasattr(backbone, "avgpool") and not keep_avg_pool:
+            backbone.avgpool = torch.nn.Identity()
         
-        if hasattr(model, "fc"): 
-            model.fc = torch.nn.Identity()
-        if hasattr(model, "head"): 
-            model.head = torch.nn.Identity()
-        if hasattr(model, "avgpool") and not keep_avg_pool:
-            model.avgpool = torch.nn.Identity()
-
-        textual = extract_encoder(["textual", "text_encoder", "transformer"])
         backbone = extract_encoder(["visual", "visual_tower", "vision_transformer", "visual_encoder", "visual_backbone"])
+        if backbone is not None and isinstance(backbone, torch.jit.ScriptModule):
+            dummy_img = torch.randn(dummy_input_size).to(device)
+            backbone = torch.jit.trace(backbone, dummy_img)
+            backbone = torch.jit.freeze(backbone.eval())
+        else: return torch.jit.script(model.eval()), None
 
-        txt_is_none = textual is None
-        backbone_is_none = backbone is None
-        if not txt_is_none or not backbone_is_none:
-            return backbone, textual
+        transformer = extract_encoder(["textual", "text_encoder", "transformer"])
         
-        return model, None
+        if transformer is not None:
+            token_embedding = getattr(model, "token_embedding", None)
+            ln_final = getattr(model, "ln_final", None)
+
+            if token_embedding is not None and ln_final is not None:
+                text_wrapper = TextualWrapper(token_embedding, transformer, ln_final).to(device)
+                
+                textual = torch.jit.script(text_wrapper.eval())
+            else:
+                textual = torch.jit.script(textual.eval())
+        else:
+            textual = None
+
+        del model
+        torch.cuda.empty_cache()
+        
+        return backbone, textual
 
     @classmethod
     def get_backbone(cls, model_identifier: str, keep_avg_pool: bool = False, cache_dir: str = "./cache"):
@@ -162,7 +203,7 @@ class BackboneFactory:
             constructor = cls.STANDARD_MODELS[model_identifier.lower()]
             model = constructor(weights="DEFAULT")
             
-            model, _ = cls.extract_visual_encoder(model, device, keep_avg_pool=keep_avg_pool)
+            model, _ = cls.extract_encoders(model, device, keep_avg_pool=keep_avg_pool)
             
             return model.to(device), None
         elif model_identifier in model2url:
@@ -170,8 +211,23 @@ class BackboneFactory:
             print(f"Fewpy: Downloading and loading backbone '{model_identifier}' from OpenAI's CLIP repository...")
             model_path = Path(download(model_identifier, cache_dir=cache_dir))
             model = torch.jit.load(model_path).eval().to(device)
+
+            state_dict = model.state_dict()
+            embed_dim = state_dict["text_projection"].shape[1]
+            transformer_width = state_dict["ln_final.weight"].shape[0]
+            context_length = state_dict["positional_embedding"].shape[0]
             # print(model)
-            backbone, textual = cls.extract_visual_encoder(model, device, keep_avg_pool=keep_avg_pool)
+            backbone, textual = cls.extract_encoders(model, device, keep_avg_pool=keep_avg_pool)
+
+            textual_dtype = textual.token_embedding.weight.dtype if textual is not None else torch.float32
+
+            textual.text_proj = torch.nn.Parameter(torch.empty(transformer_width, embed_dim)).to(device)
+            textual.positional_embedding = torch.nn.Parameter(torch.empty(context_length, transformer_width)).to(device)
+            with torch.no_grad():
+                textual.text_proj.copy_(state_dict["text_projection"])
+                textual.text_proj = textual.text_proj.to(textual_dtype)
+                textual.positional_embedding.copy_(state_dict["positional_embedding"])
+                textual.positional_embedding = textual.positional_embedding.to(textual_dtype)
 
             return backbone, textual
     
