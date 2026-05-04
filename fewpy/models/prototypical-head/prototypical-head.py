@@ -11,6 +11,8 @@ import torch.nn.functional as F
 from torchvision.ops import roi_align
 from torchvision.ops import batched_nms
 
+from fewpy.models.tipAdapter.tip_adapter import tokenize
+
 from torch import nn
 
 from pathlib import Path
@@ -49,7 +51,7 @@ class PrototypicalHead(torch.nn.Module):
     def parameters(self, recurse=True):
         
         for name, param in self.named_parameters(recurse=recurse):
-            if "backbone" not in name:
+            if "backbone" not in name and "textual" not in name:
                 yield param
 
     def gen_prototypes(self, support_features, support_gt):
@@ -63,7 +65,7 @@ class PrototypicalHead(torch.nn.Module):
             if prototypes_path.exists():
                 return torch.load(prototypes_path), unique_labels
 
-        num_aug = self.config.augment_epochs
+        num_aug = self.config.augment_epoch
         support_set_size = support_gt.shape[0]
         assert support_features.shape[0] == num_aug * support_set_size
         if num_aug > 0:
@@ -88,11 +90,11 @@ class PrototypicalHead(torch.nn.Module):
 
         return prototypes, unique_labels
 
-    def predict(
+    def forward(
             self, 
             query: torch.Tensor, 
             support_images: torch.Tensor, 
-            support_gt: dict, 
+            support_gt: torch.Tensor, 
             prompts: list[str]=[],
             classnames: list[str]=[],
         ):
@@ -112,7 +114,7 @@ class PrototypicalHead(torch.nn.Module):
         query_features_norm = F.normalize(query_features, p=2, dim=1)
         prototypes_norm = F.normalize(prototypes, p=2, dim=1)
 
-        # distances = torch.cdist(query_features, prototypes, p=2)**2
+        # distances = torch.cdist(query_features_norm.float(), prototypes_norm.float(), p=2)**2
         # logits = -distances * self.temp.exp()
         
         # [B, 1, D] - [1, K, D] -> [B, K, D]
@@ -121,46 +123,79 @@ class PrototypicalHead(torch.nn.Module):
         precision = torch.exp(
             self.class_scales
         ).to(self.device).to(self.config.torch_dtype) # [K, D]
+
+        # all_diffs = support_features - prototypes.unsqueeze(1)
+        # global_variance = all_diffs.pow(2).mean(dim=(0, 1)) # [D]
+        
+        # precision = 1.0 / (global_variance + 1e-6)
         
         dist_sq = torch.sum((diff ** 2) * precision.unsqueeze(0), dim=-1) # [B, K]
         logits = -dist_sq * self.temp.exp() # [B, K]
 
         # logits = (query_features_norm @ prototypes_norm.t()) * self.temp.exp()
-        # k = prototypes_norm
         # k = support_features.view(
-        #     self.config.augment_epochs, support_gt.shape[0], -1,
+        #     self.config.augment_epoch, support_gt.shape[0], -1,
         # ).mean(dim=0)
+        # k = prototypes
         # k /= k.norm(dim=-1, keepdim=True)
+        # v = F.one_hot(support_gt, num_classes=labels.shape[0]).to(self.device).to(self.config.torch_dtype)
         # k = k.permute(1, 0)
         # k = k.contiguous()
         # affinity = query_features_norm @ k
-        # v = F.one_hot(support_gt, num_classes=labels.shape[0]).to(self.device).to(self.config.torch_dtype)
         # logits = (2 * affinity - 2).exp() @ v
+        
+        # k = prototypes
+        # k /= k.norm(dim=-1, keepdim=True)
+        # v = F.one_hot(support_gt, num_classes=labels.shape[0]).to(self.device).to(self.config.torch_dtype)
+        # precision = torch.exp(
+        #     self.class_scales
+        # ).to(self.device).to(self.config.torch_dtype) # [K, D]
+
+        # all_diffs = support_features - prototypes.unsqueeze(1)
+        # global_variance = all_diffs.pow(2).mean(dim=(0, 1)) # [D]
+        
+        # precision = 1.0 / (global_variance + 1e-6)
+
+        # diff = query_features_norm.unsqueeze(1) - k.unsqueeze(0)
+        # dist_sq = torch.sum((diff ** 2) * precision.unsqueeze(0), dim=-1) # [B, K]
+        # logits = (-dist_sq).exp() @ v
 
         if self.textual is not None and len(prompts) > 0 and len(classnames) > 0:
+            # logits = F.softmax(logits, dim=1)
             with torch.no_grad():
                 textual_features = []
                 for classname in classnames:
-                    prompt = prompts[0].format(classname)
-                    text_tokens = self.textual.tokenize([prompt]).to(self.device)
-                    text_features = self.textual.encode_text(text_tokens).float()
-                    text_features = F.normalize(text_features, p=2, dim=-1)
-                    textual_features.append(text_features.squeeze(0))
-                textual_features = torch.stack(textual_features)
-
-            textual_logits = (query_features_norm @ textual_features.t()) * self.temp.exp()
+                    classname = classname.replace('_', ' ')
+                    prompt = [t.format(classname) for t in prompts]
+                    text_tokens = tokenize(prompt).to(self.device)
+                    text_features = self.textual(text_tokens)
+                    text_features /= text_features.norm(dim=-1, keepdim=True)
+                    text_features = text_features.mean(dim=0).squeeze()
+                    text_features /= text_features.norm()
+                    textual_features.append(text_features)
+                textual_features = torch.stack(textual_features, dim=1).to(self.device)
+            textual_logits = (query_features_norm @ textual_features.to(self.config.torch_dtype)) # * self.temp.exp()
+            # logits += F.softmax(textual_logits, dim=1) * self.config.textual_scale
             logits += textual_logits * self.config.textual_scale
             
         return logits, labels
 
-    def predict(self, x, s_x, s_y):
-        logits, labels = self.forward(x, s_x, s_y)
-        out = None
-        results = []
-
+    def predict(
+            self, 
+            x: torch.Tensor, 
+            s_x: torch.Tensor, 
+            s_y: torch.Tensor, 
+            prompts: list[str]=[],
+            classnames: list[str]=[],
+        ):
+        
         if self.class_scales is not None:
             self.class_scales.to(self.device).to(self.config.torch_dtype)
 
+        logits, labels = self.forward(x, s_x, s_y, prompts, classnames)
+        out = None
+        results = []
+        
         if self.training:
             return logits
 
@@ -207,7 +242,24 @@ class constructor_PrototypicalHead():
             )
         else:
             full_backbone = torch.jit.load(model_path, map_location=device)
-            model.backbone, model.textual = BackboneFactory.extract_visual_encoder(full_backbone, keep_avg_pool=self.args.task == "classification", device=device)
+            state_dict = full_backbone.state_dict()
+            embed_dim = state_dict["text_projection"].shape[1]
+            transformer_width = state_dict["ln_final.weight"].shape[0]
+            context_length = state_dict["positional_embedding"].shape[0]
+            
+            model.backbone, model.textual = BackboneFactory.extract_encoders(full_backbone, keep_avg_pool=self.args.task == "classification", device=device)
+
+            model.textual.text_proj = torch.nn.Parameter(torch.empty(transformer_width, embed_dim)).to(device)
+            model.textual.positional_embedding = nn.Parameter(torch.empty(context_length, transformer_width)).to(device)
+            with torch.no_grad():
+                model.textual.text_proj.copy_(state_dict["text_projection"])
+                model.textual.text_proj = model.textual.text_proj.to(self.args.torch_dtype)
+                model.textual.positional_embedding.copy_(state_dict["positional_embedding"])
+                model.textual.positional_embedding = model.textual.positional_embedding.to(self.args.torch_dtype)
+
+        if not isinstance(model.textual, torch.jit.ScriptModule):
+            model.textual = torch.jit.script(model.textual)
+            model.textual = torch.jit.freeze(model.textual.eval())
 
         parent_path = model_path.parent
         for state_dict_path in model_path.parent.glob("*.pth"):
