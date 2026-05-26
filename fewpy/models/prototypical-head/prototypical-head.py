@@ -97,13 +97,14 @@ class PrototypicalHead(torch.nn.Module):
             support_gt: torch.Tensor, 
             prompts: list[str]=[],
             classnames: list[str]=[],
+            distance_metric: str="euclidean",
         ):
 
         query = query.to(self.device).to(self.config.torch_dtype)
         support_images = support_images.to(self.device).to(self.config.torch_dtype)
         
-        query_features = self.backbone(query)
-        support_features = self.backbone(support_images)
+        query_features = self.backbone(query).to(self.config.torch_dtype)
+        support_features = self.backbone(support_images).to(self.config.torch_dtype)
 
         # L2 Normalization of support features
         # support_features = F.normalize(support_features, p=2, dim=1)
@@ -114,54 +115,43 @@ class PrototypicalHead(torch.nn.Module):
         query_features_norm = F.normalize(query_features, p=2, dim=1)
         prototypes_norm = F.normalize(prototypes, p=2, dim=1)
 
-        # distances = torch.cdist(query_features_norm.float(), prototypes_norm.float(), p=2)**2
-        # logits = -distances * self.temp.exp()
-        
-        # [B, 1, D] - [1, K, D] -> [B, K, D]
-        diff = query_features_norm.unsqueeze(1) - prototypes_norm.unsqueeze(0)
-        
-        precision = torch.exp(
-            self.class_scales
-        ).to(self.device).to(self.config.torch_dtype) # [K, D]
+        match distance_metric:
+            case "euclidean":
+                logits = -torch.cdist(query_features_norm, prototypes_norm, p=2)**2 * self.temp.exp()
 
-        # all_diffs = support_features - prototypes.unsqueeze(1)
-        # global_variance = all_diffs.pow(2).mean(dim=(0, 1)) # [D]
-        
-        # precision = 1.0 / (global_variance + 1e-6)
-        
-        dist_sq = torch.sum((diff ** 2) * precision.unsqueeze(0), dim=-1) # [B, K]
-        logits = -dist_sq * self.temp.exp() # [B, K]
+            case "cosine":
+                logits = (query_features_norm @ prototypes_norm.t()) * self.temp.exp()
 
-        # logits = (query_features_norm @ prototypes_norm.t()) * self.temp.exp()
-        # k = support_features.view(
-        #     self.config.augment_epoch, support_gt.shape[0], -1,
-        # ).mean(dim=0)
-        # k = prototypes
-        # k /= k.norm(dim=-1, keepdim=True)
-        # v = F.one_hot(support_gt, num_classes=labels.shape[0]).to(self.device).to(self.config.torch_dtype)
-        # k = k.permute(1, 0)
-        # k = k.contiguous()
-        # affinity = query_features_norm @ k
-        # logits = (2 * affinity - 2).exp() @ v
-        
-        # k = prototypes
-        # k /= k.norm(dim=-1, keepdim=True)
-        # v = F.one_hot(support_gt, num_classes=labels.shape[0]).to(self.device).to(self.config.torch_dtype)
-        # precision = torch.exp(
-        #     self.class_scales
-        # ).to(self.device).to(self.config.torch_dtype) # [K, D]
+            case "mahalanobis":
+                diff = query_features_norm.unsqueeze(1) - prototypes_norm.unsqueeze(0)
+                precision = torch.exp(
+                    self.class_scales
+                ).to(self.device).to(self.config.torch_dtype) # [K, D]
 
-        # all_diffs = support_features - prototypes.unsqueeze(1)
-        # global_variance = all_diffs.pow(2).mean(dim=(0, 1)) # [D]
-        
-        # precision = 1.0 / (global_variance + 1e-6)
+                dist_sq = torch.sum((diff ** 2) * precision.unsqueeze(0), dim=-1) # [B, K]
+                logits = -dist_sq * self.temp.exp()
 
-        # diff = query_features_norm.unsqueeze(1) - k.unsqueeze(0)
-        # dist_sq = torch.sum((diff ** 2) * precision.unsqueeze(0), dim=-1) # [B, K]
-        # logits = (-dist_sq).exp() @ v
+            case "kv":
+                k = prototypes
+                k /= k.norm(dim=-1, keepdim=True)
+                # v = F.one_hot(support_gt, num_classes=labels.shape[0]).to(self.device).to(self.config.torch_dtype)
+                k = k.permute(1, 0)
+                k = k.contiguous()
+                affinity = query_features_norm @ k
+                # logits = (2 * affinity - 2).exp() @ v
+                logits = (2 * affinity - 2).exp() # v = I
+
+            case "mahalanobis_estimated_precision":
+
+                diff = query_features_norm.unsqueeze(1) - prototypes_norm.unsqueeze(0)
+                all_diffs = support_features - prototypes.unsqueeze(1)
+                global_variance = all_diffs.pow(2).mean(dim=(0, 1)) # [D]
+                precision = 1.0 / (global_variance + 1e-6)
+                dist_sq = torch.sum((diff ** 2) * precision.unsqueeze(0), dim=-1) # [B, K]
+                logits = -dist_sq * self.temp.exp()
 
         if self.textual is not None and len(prompts) > 0 and len(classnames) > 0:
-            # logits = F.softmax(logits, dim=1)
+            logits = F.softmax(logits, dim=1)
             with torch.no_grad():
                 textual_features = []
                 for classname in classnames:
@@ -175,8 +165,8 @@ class PrototypicalHead(torch.nn.Module):
                     textual_features.append(text_features)
                 textual_features = torch.stack(textual_features, dim=1).to(self.device)
             textual_logits = (query_features_norm @ textual_features.to(self.config.torch_dtype)) # * self.temp.exp()
-            # logits += F.softmax(textual_logits, dim=1) * self.config.textual_scale
-            logits += textual_logits * self.config.textual_scale
+            logits += F.softmax(textual_logits, dim=1) * self.config.textual_scale
+            # logits += textual_logits * self.config.textual_scale
             
         return logits, labels
 
@@ -187,12 +177,13 @@ class PrototypicalHead(torch.nn.Module):
             s_y: torch.Tensor, 
             prompts: list[str]=[],
             classnames: list[str]=[],
+            distance_metric: str="euclidean",
         ):
         
         if self.class_scales is not None:
             self.class_scales.to(self.device).to(self.config.torch_dtype)
 
-        logits, labels = self.forward(x, s_x, s_y, prompts, classnames)
+        logits, labels = self.forward(x, s_x, s_y, prompts, classnames, distance_metric)
         out = None
         results = []
         
