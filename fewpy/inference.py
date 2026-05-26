@@ -92,7 +92,7 @@ class FewShotModel:
 
         return str(self.model)
 
-    def predict(self, **kwargs) -> Tensor:
+    def predict(self, *args, **kwargs) -> Tensor:
         
         for step in self.preprocessors:
             
@@ -122,7 +122,7 @@ class FewShotModel:
                     f"Available keys: {list(kwargs.keys())}"
                 )
 
-        return self.model.predict(**model_inputs)
+        return self.model.predict(*args, **model_inputs)
     
     def add_preprocessor(self, preprocessor: list[Preprocessor] | Preprocessor):
 

@@ -127,18 +127,18 @@ class TextualWrapper(torch.nn.Module):
         self.transformer = transformer
         self.ln_final = ln_final
         self.positional_embedding = None
-        self.text_projection = None
+        self.text_proj = None
 
     def forward(self, text_tokens: torch.Tensor) -> torch.Tensor:
-        x = self.token_embedding(text_tokens).type(self.dtype)  # [batch_size, n_ctx, d_model]
+        x = self.token_embedding(text_tokens)  # [batch_size, n_ctx, d_model]
 
-        x = x + self.positional_embedding.type(self.dtype)
+        x = x + self.positional_embedding
         x = x.permute(1, 0, 2) 
         x = self.transformer(x)
         x = x.permute(1, 0, 2)
-        x = self.ln_final(x).type(self.dtype)
+        x = self.ln_final(x)
 
-        x = x[torch.arange(x.shape[0]), text_tokens.argmax(dim=-1)] @ self.text_projection
+        x = x[torch.arange(x.shape[0]), text_tokens.argmax(dim=-1)] @ self.text_proj
 
         return x
 
@@ -161,10 +161,10 @@ class BackboneFactory:
                     break
             return encoder
 
-        if hasattr(backbone, "fc"): backbone.fc = torch.nn.Identity()
-        if hasattr(backbone, "head"): backbone.head = torch.nn.Identity()
-        if hasattr(backbone, "avgpool") and not keep_avg_pool:
-            backbone.avgpool = torch.nn.Identity()
+        if hasattr(model, "fc"): model.fc = torch.nn.Identity()
+        if hasattr(model, "head"): model.head = torch.nn.Identity()
+        if hasattr(model, "avgpool") and not keep_avg_pool:
+            model.avgpool = torch.nn.Identity()
         
         backbone = extract_encoder(["visual", "visual_tower", "vision_transformer", "visual_encoder", "visual_backbone"])
         if backbone is not None and isinstance(backbone, torch.jit.ScriptModule):
@@ -180,13 +180,7 @@ class BackboneFactory:
             ln_final = getattr(model, "ln_final", None)
 
             if token_embedding is not None and ln_final is not None:
-                text_wrapper = TextualWrapper(token_embedding, transformer, ln_final).to(device)
-                
-                textual = torch.jit.script(text_wrapper.eval())
-            else:
-                textual = torch.jit.script(textual.eval())
-        else:
-            textual = None
+                textual = TextualWrapper(token_embedding, transformer, ln_final).to(device)
 
         del model
         torch.cuda.empty_cache()

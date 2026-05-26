@@ -103,14 +103,13 @@ class PrototypicalHead(torch.nn.Module):
         query = query.to(self.device).to(self.config.torch_dtype)
         support_images = support_images.to(self.device).to(self.config.torch_dtype)
         
-        query_features = self.backbone(query).to(self.config.torch_dtype)
-        support_features = self.backbone(support_images).to(self.config.torch_dtype)
+        query_features = self.backbone(query).float()
+        support_features = self.backbone(support_images).float()
 
         # L2 Normalization of support features
-        # support_features = F.normalize(support_features, p=2, dim=1)
+        # if l2_norm: support_features = F.normalize(support_features, p=2, dim=1)
 
         prototypes, labels = self.gen_prototypes(support_features, support_gt)
-        # labels = torch.unique(support_gt)
 
         query_features_norm = F.normalize(query_features, p=2, dim=1)
         prototypes_norm = F.normalize(prototypes, p=2, dim=1)
@@ -134,12 +133,11 @@ class PrototypicalHead(torch.nn.Module):
             case "kv":
                 k = prototypes
                 k /= k.norm(dim=-1, keepdim=True)
-                # v = F.one_hot(support_gt, num_classes=labels.shape[0]).to(self.device).to(self.config.torch_dtype)
+                v = F.one_hot(support_gt, num_classes=labels.shape[0]).to(self.device).float()
                 k = k.permute(1, 0)
                 k = k.contiguous()
                 affinity = query_features_norm @ k
-                # logits = (2 * affinity - 2).exp() @ v
-                logits = (2 * affinity - 2).exp() # v = I
+                logits = (2 * affinity - 2).exp() @ v
 
             case "mahalanobis_estimated_precision":
 
@@ -149,6 +147,7 @@ class PrototypicalHead(torch.nn.Module):
                 precision = 1.0 / (global_variance + 1e-6)
                 dist_sq = torch.sum((diff ** 2) * precision.unsqueeze(0), dim=-1) # [B, K]
                 logits = -dist_sq * self.temp.exp()
+
 
         if self.textual is not None and len(prompts) > 0 and len(classnames) > 0:
             logits = F.softmax(logits, dim=1)
@@ -163,8 +162,8 @@ class PrototypicalHead(torch.nn.Module):
                     text_features = text_features.mean(dim=0).squeeze()
                     text_features /= text_features.norm()
                     textual_features.append(text_features)
-                textual_features = torch.stack(textual_features, dim=1).to(self.device)
-            textual_logits = (query_features_norm @ textual_features.to(self.config.torch_dtype)) # * self.temp.exp()
+                textual_features = torch.stack(textual_features, dim=1).to(self.device).float()
+            textual_logits = (query_features_norm @ textual_features) # * self.temp.exp()
             logits += F.softmax(textual_logits, dim=1) * self.config.textual_scale
             # logits += textual_logits * self.config.textual_scale
             
