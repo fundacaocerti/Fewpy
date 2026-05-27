@@ -38,7 +38,7 @@ dependencies = []
 [dependency-groups]
 dev = [
     "pre-commit>=4.2.0",
-    "ruff>=0.12.7"
+    "ruff>=0.15.14"
 ]
 poe = [
     "poethepoet>=0.36.0",
