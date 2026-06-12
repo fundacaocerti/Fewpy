@@ -4,9 +4,10 @@ from inspect import signature, Parameter
 from pydantic import BaseModel, Field, PrivateAttr
 from typing import Callable, List, Dict, Any
 
+from fewpy.metrics import DistanceMetric
 from fewpy.models.register import REGISTRY, CONFIG, CONSTRUCTOR
 import fewpy.models
-
+    
 
 class Preprocessor(BaseModel):
 
@@ -64,6 +65,13 @@ class FewShotModel:
         
         return self.model.training
 
+    def encode_image(self, batch):
+
+        if hasattr(self.model, "encode_image") and callable(getattr(self.model, "encode_image")):
+            return self.model.encode_image(batch)
+        else:
+            return []
+
     def get_model_in_features(self):
 
         return self.params
@@ -92,7 +100,7 @@ class FewShotModel:
 
         return str(self.model)
 
-    def predict(self, *args, **kwargs) -> Tensor:
+    def predict(self,*args, **kwargs) -> Tensor:
         
         for step in self.preprocessors:
             

@@ -11,6 +11,8 @@ import torch.nn.functional as F
 from torchvision.ops import roi_align
 from torchvision.ops import batched_nms
 
+from fewpy.metrics import DistanceMetric
+
 from fewpy.models.tipAdapter.tip_adapter import tokenize
 
 from torch import nn
@@ -30,6 +32,8 @@ class PrototypicalHead(torch.nn.Module):
         self.class_scales = nn.Parameter(torch.zeros(
             self.config.n_classes, 
             self.config.embedding_size)) if self.config.task == "classification" else None
+
+        self.textual_scale = self.config.textual_scale
         
     # def _apply_nms(self, bboxes, scores, class_ids, iou_threshold):
 
@@ -66,13 +70,14 @@ class PrototypicalHead(torch.nn.Module):
                 return torch.load(prototypes_path), unique_labels
 
         num_aug = self.config.augment_epoch
-        support_set_size = support_gt.shape[0]
+        support_set_size = unique_labels.shape[0] * self.config.kshot
+        # print(support_features.shape[0], num_aug, support_set_size)
         assert support_features.shape[0] == num_aug * support_set_size
         if num_aug > 0:
             support_features = support_features.view(num_aug, support_set_size, -1).mean(dim=0)
 
         # print("proto gen sup features", support_features.shape)
-        
+        if support_gt.shape[0] > support_set_size: support_gt = support_gt[:support_set_size]
         for label in unique_labels:
             mask = (support_gt == label)
             feature_subset = support_features[mask]
@@ -90,67 +95,121 @@ class PrototypicalHead(torch.nn.Module):
 
         return prototypes, unique_labels
 
-    def forward(
-            self, 
-            query: torch.Tensor, 
-            support_images: torch.Tensor, 
-            support_gt: torch.Tensor, 
-            prompts: list[str]=[],
-            classnames: list[str]=[],
-            distance_metric: str="euclidean",
-        ):
+    def encode_image(self, batch: torch.Tensor):
 
-        query = query.to(self.device).to(self.config.torch_dtype)
-        support_images = support_images.to(self.device).to(self.config.torch_dtype)
-        
-        query_features = self.backbone(query).float()
-        support_features = self.backbone(support_images).float()
+        return self.backbone(batch.to(self.device).to(self.config.torch_dtype)).float()
 
-        # L2 Normalization of support features
-        # if l2_norm: support_features = F.normalize(support_features, p=2, dim=1)
-
-        prototypes, labels = self.gen_prototypes(support_features, support_gt)
+    def gen_visual_logits(self, query_features, support_features, prototypes, distance_metric):
 
         query_features_norm = F.normalize(query_features, p=2, dim=1)
         prototypes_norm = F.normalize(prototypes, p=2, dim=1)
-
+        
         match distance_metric:
-            case "euclidean":
-                logits = -torch.cdist(query_features_norm, prototypes_norm, p=2)**2 * self.temp.exp()
+            case DistanceMetric.EUCLIDEAN:
+                logits = -torch.cdist(query_features, prototypes, p=2)**2 * self.temp.exp()
+                logits = F.softmax(logits, dim=1)
 
-            case "cosine":
+            case DistanceMetric.COSINE_SIMILARITY:
                 logits = (query_features_norm @ prototypes_norm.t()) * self.temp.exp()
+                logits = F.softmax(logits, dim=1)
 
-            case "mahalanobis":
-                diff = query_features_norm.unsqueeze(1) - prototypes_norm.unsqueeze(0)
+            case DistanceMetric.LEARNABLE_MAHALANOBIS:
+                diff = query_features.unsqueeze(1) - prototypes.unsqueeze(0)
                 precision = torch.exp(
                     self.class_scales
                 ).to(self.device).to(self.config.torch_dtype) # [K, D]
 
                 dist_sq = torch.sum((diff ** 2) * precision.unsqueeze(0), dim=-1) # [B, K]
                 logits = -dist_sq * self.temp.exp()
+                logits = F.softmax(logits, dim=1)
 
-            case "kv":
-                k = prototypes
-                k /= k.norm(dim=-1, keepdim=True)
-                v = F.one_hot(support_gt, num_classes=labels.shape[0]).to(self.device).float()
-                k = k.permute(1, 0)
-                k = k.contiguous()
-                affinity = query_features_norm @ k
-                logits = (2 * affinity - 2).exp() @ v
+            case DistanceMetric.FULL_MATRIX_MAHALANOBIS:
+                diff = query_features_norm.unsqueeze(1) - prototypes_norm.unsqueeze(0) # [B, K, D]
+                support_features_norm = F.normalize(support_features, p=2, dim=1)
+                if support_features_norm.shape == prototypes_norm.shape: 
+                    all_diffs = support_features_norm - prototypes_norm
+                else: 
+                    all_diffs = support_features_norm - prototypes_norm.unsqueeze(1)       # [..., D]
+                B, K, D = diff.shape
+                all_diffs_flat = all_diffs.view(-1, D)
+                N = all_diffs_flat.shape[0]
+                
+                global_covariance = (all_diffs_flat.T @ all_diffs_flat) / N 
+                reg_matrix = torch.eye(D, device=all_diffs.device, dtype=all_diffs.dtype) * self.config.precision_regularizer
+                global_covariance = global_covariance + reg_matrix # [D, D]
 
-            case "mahalanobis_estimated_precision":
+                diff_flat_T = diff.view(-1, D).T 
+                precision_diff_T = torch.linalg.solve(global_covariance, diff_flat_T)
+                precision_diff = precision_diff_T.T.view(B, K, D)
+                
+                dist_sq = torch.sum(diff * precision_diff, dim=-1) # [B, K]
+                logits = -dist_sq * self.temp.exp()
+                logits = F.softmax(logits, dim=1)
 
+            case DistanceMetric.DIAGONAL_MAHALANOBIS:
                 diff = query_features_norm.unsqueeze(1) - prototypes_norm.unsqueeze(0)
-                all_diffs = support_features - prototypes.unsqueeze(1)
+                # print(support_features.shape, prototypes.shape)
+                support_features_norm = F.normalize(support_features, p=2, dim=1)
+                # print(support_features_norm == prototypes_norm)
+                if support_features_norm.shape == prototypes_norm.shape: 
+                    all_diffs = support_features_norm - prototypes_norm
+                else: 
+                    all_diffs = support_features_norm - prototypes_norm.unsqueeze(1)       # [..., D]
+                # print(all_diffs)
                 global_variance = all_diffs.pow(2).mean(dim=(0, 1)) # [D]
-                precision = 1.0 / (global_variance + 1e-6)
+                
+                # print(global_variance)
+                # exit(1)
+                
+                precision = 1.0 / (global_variance + self.config.precision_regularizer)
                 dist_sq = torch.sum((diff ** 2) * precision.unsqueeze(0), dim=-1) # [B, K]
                 logits = -dist_sq * self.temp.exp()
+                logits = F.softmax(logits, dim=1)
 
+            case DistanceMetric.KV:
+                k = prototypes_norm
+                affinity = query_features_norm @ k.t()
+                logits = (2 * affinity - 2).exp()
 
-        if self.textual is not None and len(prompts) > 0 and len(classnames) > 0:
-            logits = F.softmax(logits, dim=1)
+            case DistanceMetric.SOFTMAX_KV:
+                k = prototypes_norm
+                affinity = query_features_norm @ k.t()
+                logits = (2 * affinity - 2).exp()
+                logits = F.softmax(logits, dim=1)
+
+            case _:
+                raise ValueError(f"Distance metric cannot be specified [{distance_metric}]!")
+
+        return logits, query_features_norm
+
+    def forward(
+            self, 
+            query: torch.Tensor, 
+            support_images: torch.Tensor, 
+            support_gt: torch.Tensor,
+            query_features: torch.Tensor,
+            support_features: torch.Tensor,
+            prompts: list[str],
+            classnames: list[str],
+            distance_metric: DistanceMetric,
+        ):
+
+        # print(query.shape, support_images.shape, support_gt.shape)
+        if query_features is None:
+            assert query is not None
+            query = query.to(self.device).to(self.config.torch_dtype)
+            query_features = self.backbone(query).float()
+        if support_features is None:
+            assert support_features is not None
+            support_images = support_images.to(self.device).to(self.config.torch_dtype)
+            support_features = self.backbone(support_images).float()
+
+        prototypes, labels = self.gen_prototypes(support_features, support_gt)
+        # labels = torch.unique(support_gt)
+
+        logits, query_features_norm = self.gen_visual_logits(query_features, support_features, prototypes, distance_metric)
+
+        if self.textual is not None and len(prompts) > 0 and len(classnames) > 0 and self.config.textual_scale > 0.0:
             with torch.no_grad():
                 textual_features = []
                 for classname in classnames:
@@ -164,32 +223,48 @@ class PrototypicalHead(torch.nn.Module):
                     textual_features.append(text_features)
                 textual_features = torch.stack(textual_features, dim=1).to(self.device).float()
             textual_logits = (query_features_norm @ textual_features) # * self.temp.exp()
-            logits += F.softmax(textual_logits, dim=1) * self.config.textual_scale
-            # logits += textual_logits * self.config.textual_scale
+            logits += F.softmax(textual_logits, dim=1) * self.textual_scale
+            # logits += textual_logits * self.textual_scale
             
         return logits, labels
 
     def predict(
             self, 
-            x: torch.Tensor, 
-            s_x: torch.Tensor, 
-            s_y: torch.Tensor, 
+            x: torch.Tensor=None, 
+            s_x: torch.Tensor=None, 
+            s_y: torch.Tensor=None,
+            query_features: torch.Tensor=None,
+            support_features: torch.Tensor=None,
             prompts: list[str]=[],
             classnames: list[str]=[],
-            distance_metric: str="euclidean",
+            distance_metric: str=DistanceMetric.EUCLIDEAN,
+            textual_scale: int=None,
         ):
+
+        assert s_y is not None
         
         if self.class_scales is not None:
             self.class_scales.to(self.device).to(self.config.torch_dtype)
 
-        logits, labels = self.forward(x, s_x, s_y, prompts, classnames, distance_metric)
-        out = None
-        results = []
+        if textual_scale is not None:
+            self.textual_scale = textual_scale
+        else:
+            self.textual_scale = self.config.textual_scale
+
+        logits, labels = self.forward(
+            x, s_x, s_y, 
+            query_features,
+            support_features,
+            prompts, 
+            classnames, 
+            distance_metric
+        )
         
         if self.training:
             return logits
 
         out = labels[logits.argmax(dim=-1).detach().cpu()]
+        results = []
         for label in out:
             results.append({
                 "data": label,

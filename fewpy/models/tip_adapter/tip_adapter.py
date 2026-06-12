@@ -125,6 +125,7 @@ class TipAdapter(nn.Module):
         num_samples = gt.shape[0]
         num_aug = self.config.augment_epoch
 
+        # print(image_features.shape[0], num_aug, num_samples)
         mismatch_msg = "Tensor size mismatch between augmented support images tensor and gt tensor"
         assert image_features.shape[0] == num_aug * num_samples, mismatch_msg
 
@@ -213,9 +214,10 @@ class TipAdapter(nn.Module):
 
     def predict(
             self, 
-            x: torch.Tensor, 
-            s_x: torch.Tensor, 
-            s_y: torch.Tensor, 
+            x: torch.Tensor=None, 
+            s_x: torch.Tensor=None, 
+            s_y: torch.Tensor=None,
+            query_features: torch.Tensor=None,
             prompts: list[str]=[],
             classnames: list[str]=[],
         ):
@@ -243,7 +245,7 @@ class TipAdapter(nn.Module):
         clip_weights = self.encode_text(prompts, classnames)
 
         # extract image features
-        x = self.encode_image(x)
+        x = self.encode_image(x) if query_features is None else query_features.half()
 
         if self.training:
             if self.first:

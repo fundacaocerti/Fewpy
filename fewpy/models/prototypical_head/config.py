@@ -21,6 +21,8 @@ class PrototypicalHeadConfig(BaseModel):
     )
     textual_scale: float = Field(default=1.0, description="Scale for textual features when combining with visual features")
     augment_epoch: int = Field(default=0, description="Number of epochs the support set is augmented")
+    precision_regularizer: float = Field(default=1e-6, description="Regularizer for mahalanobis' precision estimation")
+
 
     @property
     def torch_dtype(self) -> torch.dtype:
